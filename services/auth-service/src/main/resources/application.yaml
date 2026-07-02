@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: auth-service
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    # Retry the DB connection at startup so a brief unavailability (e.g. Postgres still finishing
+    # first-boot init) doesn't crash the service.
+    connect-retries: 10
+    connect-retries-interval: 2s
+    # Per-service location so migrations don't collide on a shared classpath.
+    locations: classpath:db/migration/auth
+
+server:
+  port: 8082
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# Shared HMAC secret (HS256) — the same value must be configured on every service that validates
+# tokens. Override via JWT_SECRET in any real environment. Must be >= 32 bytes.
+security:
+  jwt:
+    secret: ${JWT_SECRET:demo-secret-demo-secret-demo-secret-1234}
+    ttl-seconds: ${JWT_TTL_SECONDS:3600}

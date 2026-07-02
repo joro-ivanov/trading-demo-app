@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.example.demo</groupId>
+        <artifactId>trading-demo-app</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>e2e-tests</artifactId>
+    <name>e2e-tests (framework + api + ui)</name>
+    <description>
+        Single e2e module. Package root com.example.demo.e2e with subpackages:
+        framework (ApiRequest/ApiResponse, BaseService + service objects, WS services,
+        Config singleton, Page-Object base, Allure hooks), api, ui. See docs/DESIGN.md §5, §8.
+        The framework lives in src/main/java so it is a normal, ArchUnit-analyzable artifact;
+        the api/ui tests live in src/test/java and consume only *Page and *Service types.
+    </description>
+
+    <dependencies>
+        <!-- Shared MarketHours (the @RunDuringMarketHours gate matches the server's session). -->
+        <dependency>
+            <groupId>com.example.demo</groupId>
+            <artifactId>common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- HTTP engine — confined to BaseService (ArchUnit-enforced, docs §13.1) -->
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+        </dependency>
+
+        <!-- JSON (Jackson 3 / tools.jackson) for ApiResponse.as / asList -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- App WebSocket client (STOMP/SockJS) — confined to BaseWsService (ArchUnit-enforced) -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-messaging</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-websocket</artifactId>
+        </dependency>
+        <!-- JSR-356 WebSocket client implementation for StandardWebSocketClient (StompTestClient). -->
+        <dependency>
+            <groupId>org.apache.tomcat.embed</groupId>
+            <artifactId>tomcat-embed-websocket</artifactId>
+        </dependency>
+
+        <!-- UI driver -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+        </dependency>
+
+        <!-- Reporting -->
+        <dependency>
+            <groupId>io.qameta.allure</groupId>
+            <artifactId>allure-junit5</artifactId>
+        </dependency>
+
+        <!-- Test framework (compile scope: framework extension implements JUnit APIs) -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+
+        <!-- Assertions / async -->
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+        </dependency>
+
+        <!-- Logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+
+        <!-- e2e tests run against an already-running stack (docker compose / deployed env);
+             the app stack itself is external, but UI browser mode may use a Playwright container. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <configuration>
+                    <rulesets>
+                        <ruleset>${project.basedir}/../build/pmd/test-conventions.xml</ruleset>
+                    </rulesets>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <configuration>
+                    <configLocation>${project.basedir}/../build/checkstyle/checkstyle.xml</configLocation>
+                </configuration>
+            </plugin>
+            <!-- The e2e suites now end in *Test, so Surefire must explicitly stay out of the
+                 api/ui packages; they are owned by Failsafe only. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/api/*Test.java</exclude>
+                        <exclude>**/ui/*Test.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <!-- `mvn -pl e2e-tests allure:report` renders target/allure-results into an HTML report
+                 (failure screenshots/video/trace/logs attached by the e2e extensions). -->
+            <plugin>
+                <groupId>io.qameta.allure</groupId>
+                <artifactId>allure-maven</artifactId>
+                <version>2.15.2</version>
+            </plugin>
+            <!-- The e2e suites live under api/ui packages and are run by Failsafe only. They
+                 require a running stack, so both groups are excluded from the default build and
+                 run via a profile (-Papi-e2e / -Pui-e2e) or via explicit groups after
+                 `docker compose up`. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/api/*Test.java</include>
+                        <include>**/ui/*Test.java</include>
+                    </includes>
+                    <excludedGroups>api,ui</excludedGroups>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- e2e profiles run against an already-running stack (docs/DESIGN.md §7):
+         start it first with `docker compose up`, then e.g. `mvn -pl e2e-tests verify -Papi-e2e`. -->
+    <profiles>
+        <profile>
+            <id>api-e2e</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration combine.self="override">
+                            <includes>
+                                <include>**/api/*Test.java</include>
+                                <include>**/ui/*Test.java</include>
+                            </includes>
+                            <groups>api</groups>
+                            <excludedGroups>ui</excludedGroups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>ui-e2e</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration combine.self="override">
+                            <includes>
+                                <include>**/api/*Test.java</include>
+                                <include>**/ui/*Test.java</include>
+                            </includes>
+                            <groups>ui</groups>
+                            <excludedGroups>api</excludedGroups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>all-e2e</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration combine.self="override">
+                            <includes>
+                                <include>**/api/*Test.java</include>
+                                <include>**/ui/*Test.java</include>
+                            </includes>
+                            <groups>api,ui</groups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

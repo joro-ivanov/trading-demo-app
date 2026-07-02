@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example.demo</groupId>
+    <artifactId>trading-demo-app</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>Trading Dashboard Testing Showcase (parent reactor)</name>
+    <description>
+        Multi-module showcase for Testcontainers, WireMock (incl. WebSocket beta),
+        Playwright (Java) UI e2e, API e2e (facade/service-object framework), and ArchUnit.
+        See docs/DESIGN.md.
+    </description>
+
+    <!--
+      Reactor modules. Services / integration-tests / archunit-tests are added in later
+      milestones (see docs/DESIGN.md §15). M1 scaffolds the reactor + the e2e framework.
+    -->
+    <modules>
+        <module>common</module>
+        <module>wiremock-ws-spike</module>
+        <module>services/auth-service</module>
+        <module>services/order-service</module>
+        <module>services/market-data-service</module>
+        <module>services/portfolio-service</module>
+        <module>services/notification-service</module>
+        <module>integration-tests</module>
+        <module>e2e-tests</module>
+    </modules>
+
+    <properties>
+        <java.version>25</java.version>
+        <maven.compiler.release>25</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Curated by spring-boot-dependencies 4.1.0 BOM (latest stable):
+             JUnit 6.0.3 · Testcontainers 2.0.5 · Jackson 3.1.4 · Awaitility 4.3.0 · AssertJ 3.27.7 -->
+        <spring-boot.version>4.1.0</spring-boot.version>
+
+        <!-- Latest stable, NOT managed by the Spring Boot BOM -->
+        <rest-assured.version>6.0.0</rest-assured.version>
+        <playwright.version>1.60.0</playwright.version>
+        <archunit.version>1.4.2</archunit.version>
+        <java-websocket.version>1.6.0</java-websocket.version>
+        <allure.version>2.35.2</allure.version>
+        <jackson.annotations.version>3.0-rc5</jackson.annotations.version>
+
+        <!-- The ONLY non-stable dependency: WireMock beta for WebSocket mocking (docs/DESIGN.md §9) -->
+        <wiremock.version>4.0.0-beta.36</wiremock.version>
+
+        <!-- Build plugins -->
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
+        <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot 4.1.0 curated dependency set (Spring Framework 7, JUnit 6,
+                 Testcontainers 2, Jackson 3, AssertJ, Awaitility, Logback, ...) -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Allure reporting BOM -->
+            <dependency>
+                <groupId>io.qameta.allure</groupId>
+                <artifactId>allure-bom</artifactId>
+                <version>${allure.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Explicitly pin annotations to the latest Jackson 3 RC requested for this demo. -->
+            <dependency>
+                <groupId>tools.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson.annotations.version}</version>
+            </dependency>
+
+            <!-- Not managed by the BOMs above -->
+            <dependency>
+                <groupId>io.rest-assured</groupId>
+                <artifactId>rest-assured</artifactId>
+                <version>${rest-assured.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.playwright</groupId>
+                <artifactId>playwright</artifactId>
+                <version>${playwright.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.java-websocket</groupId>
+                <artifactId>Java-WebSocket</artifactId>
+                <version>${java-websocket.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.wiremock</groupId>
+                <artifactId>wiremock</artifactId>
+                <version>${wiremock.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <!-- Control-flow ban in test sources across all modules (docs/DESIGN.md §13.2) — the
+                 statement-level rule ArchUnit cannot express. PMD 7.25 to parse Java 25. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <version>3.26.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>net.sourceforge.pmd</groupId>
+                        <artifactId>pmd-core</artifactId>
+                        <version>7.25.0</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>net.sourceforge.pmd</groupId>
+                        <artifactId>pmd-java</artifactId>
+                        <version>7.25.0</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <includeTests>true</includeTests>
+                    <printFailingErrors>true</printFailingErrors>
+                    <rulesets>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/test-conventions.xml</ruleset>
+                    </rulesets>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Minimal Java style gate (import hygiene). Checkstyle 13.x to parse Java 25. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.6.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>13.6.0</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <configLocation>${maven.multiModuleProjectDirectory}/build/checkstyle/checkstyle.xml</configLocation>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                    <failOnViolation>true</failOnViolation>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Run *IT integration tests via Failsafe in the integration-test/verify phase across
+                 all modules (per-service ITs, the cross-service flagship, and the e2e suites). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                        <!-- Emit method parameter names: required by Spring MVC @PathVariable/@RequestParam
+                             and @ConfigurationProperties without explicit names. Spring Boot's own parent
+                             sets this; our reactor parent must set it explicitly. -->
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven-failsafe-plugin.version}</version>
+                </plugin>
+                <!-- We don't inherit spring-boot-starter-parent, so the Boot plugin needs its
+                     version AND an explicit repackage execution to produce the executable jar. -->
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                    <executions>
+                        <execution>
+                            <id>repackage</id>
+                            <goals>
+                                <goal>repackage</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

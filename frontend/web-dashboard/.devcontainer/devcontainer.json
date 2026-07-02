@@ -1,0 +1,13 @@
+{
+  "name": "web-dashboard",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24",
+  "workspaceFolder": "/workspace",
+  "postCreateCommand": "npm install",
+  "forwardPorts": [5173],
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+    }
+  },
+  "remoteUser": "node"
+}

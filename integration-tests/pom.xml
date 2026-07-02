@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.example.demo</groupId>
+        <artifactId>trading-demo-app</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>integration-tests</artifactId>
+    <name>integration-tests (cross-service)</name>
+    <description>
+        Cross-service flagship test (docs/DESIGN.md §7.2): boots order + market-data + portfolio +
+        notification in-JVM against shared Testcontainers infra (2x Postgres, cp-kafka, Redis) and
+        a WireMock exchange (REST + raw WS). Asserts the whole chain: REST order → orders.submitted
+        → match at WS-fed price → fills → portfolio position + STOMP push to a subscribed client.
+        Runs via Failsafe (mvn verify / -Pintegration profile alignment).
+    </description>
+
+    <dependencies>
+        <!-- The services under test (plain jars via the 'boot' classifier on each service). -->
+        <dependency>
+            <groupId>com.example.demo</groupId>
+            <artifactId>order-service</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.example.demo</groupId>
+            <artifactId>market-data-service</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.example.demo</groupId>
+            <artifactId>portfolio-service</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.example.demo</groupId>
+            <artifactId>notification-service</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Test infrastructure -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Cross-service tests are *IT, run by Failsafe in the integration-test phase. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <!-- Each service is launched as an isolated subprocess from its executable
+                         '-boot' jar, so classpaths/auto-config/config files never collide. -->
+                    <systemPropertyVariables>
+                        <order.jar>${project.basedir}/../services/order-service/target/order-service-${project.version}-boot.jar</order.jar>
+                        <marketdata.jar>${project.basedir}/../services/market-data-service/target/market-data-service-${project.version}-boot.jar</marketdata.jar>
+                        <portfolio.jar>${project.basedir}/../services/portfolio-service/target/portfolio-service-${project.version}-boot.jar</portfolio.jar>
+                        <notification.jar>${project.basedir}/../services/notification-service/target/notification-service-${project.version}-boot.jar</notification.jar>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

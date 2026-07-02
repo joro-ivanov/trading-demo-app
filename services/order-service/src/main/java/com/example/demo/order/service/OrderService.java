@@ -1,0 +1,132 @@
+package com.example.demo.order.service;
+
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.example.demo.order.domain.OrderEntity;
+import com.example.demo.order.domain.OrderRepository;
+import com.example.demo.order.domain.OrderStatus;
+import com.example.demo.order.domain.Side;
+import com.example.demo.order.events.OrderEventPublisher;
+import com.example.demo.order.exchange.ExchangeAck;
+import com.example.demo.order.exchange.ExchangeClient;
+import com.example.demo.order.marketdata.MarketPriceClient;
+import com.example.demo.order.portfolio.PortfolioClient;
+import com.example.demo.order.web.OrderResponse;
+import com.example.demo.order.web.PlaceOrderRequest;
+
+@Service
+public class OrderService {
+
+    private static final String ACCEPTED = "ACCEPTED";
+
+    private final OrderRepository repository;
+    private final ExchangeClient exchangeClient;
+    private final OrderEventPublisher publisher;
+    private final MarketHoursPolicy marketHours;
+    private final PortfolioClient portfolioClient;
+    private final MarketPriceClient marketPriceClient;
+    private final Clock clock;
+
+    public OrderService(OrderRepository repository, ExchangeClient exchangeClient,
+                        OrderEventPublisher publisher, MarketHoursPolicy marketHours,
+                        PortfolioClient portfolioClient, MarketPriceClient marketPriceClient, Clock clock) {
+        this.repository = repository;
+        this.exchangeClient = exchangeClient;
+        this.publisher = publisher;
+        this.marketHours = marketHours;
+        this.portfolioClient = portfolioClient;
+        this.marketPriceClient = marketPriceClient;
+        this.clock = clock;
+    }
+
+    @Transactional
+    public OrderResponse place(PlaceOrderRequest request, String owner) {
+        if (!marketHours.isOpen(clock.instant())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Market is closed");
+        }
+        guardAgainstShortSell(request, owner);
+        guardAgainstInsufficientFunds(request, owner);
+
+        OrderEntity order = new OrderEntity(
+                UUID.randomUUID(),
+                request.symbol(),
+                request.side(),
+                request.quantity(),
+                request.typeOrDefault(),
+                request.limitPrice(),
+                request.stopPrice(),
+                owner,
+                OrderStatus.NEW,
+                clock.instant());
+
+        ExchangeAck ack = exchangeClient.route(order);
+        order.setStatus(ACCEPTED.equals(ack.status()) ? OrderStatus.SUBMITTED : OrderStatus.REJECTED);
+
+        repository.save(order);
+        // A SUBMITTED order goes to the matcher, which resolves it to FILLED or PENDING. A REJECTED
+        // order must never reach the matcher (no phantom fill).
+        if (order.getStatus() == OrderStatus.SUBMITTED) {
+            publisher.publishSubmitted(order);
+        }
+        return OrderResponse.from(order);
+    }
+
+    private void guardAgainstShortSell(PlaceOrderRequest request, String owner) {
+        if (request.side() != Side.SELL) {
+            return;
+        }
+        BigDecimal held = portfolioClient.heldQuantity(owner, request.symbol());
+        if (request.quantity().compareTo(held) > 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Insufficient holdings to sell " + request.quantity() + " " + request.symbol()
+                            + " (held " + held + ")");
+        }
+    }
+
+    // A BUY must be affordable: estimated cost (quantity × current market price) ≤ the owner's cash.
+    // When no price is cached the order can't be valued yet — let it through (it will rest until a
+    // price exists), consistent with the matcher.
+    private void guardAgainstInsufficientFunds(PlaceOrderRequest request, String owner) {
+        if (request.side() != Side.BUY) {
+            return;
+        }
+        java.util.Optional<BigDecimal> price = marketPriceClient.latestPrice(request.symbol());
+        if (price.isEmpty()) {
+            return;
+        }
+        BigDecimal cost = price.get().multiply(request.quantity());
+        BigDecimal cash = portfolioClient.availableCash(owner);
+        if (cost.compareTo(cash) > 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Insufficient funds to buy " + request.quantity() + " " + request.symbol()
+                            + " (cost " + cost + ", available " + cash + ")");
+        }
+    }
+
+    @Transactional
+    public OrderResponse cancel(UUID id, String owner) {
+        // Treat "not yours" exactly like "not found" so a non-owner cannot even probe for existence.
+        OrderEntity order = repository.findById(id)
+                .filter(existing -> existing.getOwner().equals(owner))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + id));
+        if (order.getStatus() == OrderStatus.FILLED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Filled orders cannot be cancelled: " + id);
+        }
+        order.setStatus(OrderStatus.CANCELLED);
+        repository.save(order);
+        return OrderResponse.from(order);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderResponse> history(String owner) {
+        return repository.findByOwner(owner).stream().map(OrderResponse::from).toList();
+    }
+}

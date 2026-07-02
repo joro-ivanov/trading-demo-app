@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: market-data-service
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+server:
+  port: 8081
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# Upstream exchange WebSocket feed (raw WS; WireMock-mocked in tests)
+exchange:
+  ws-url: ${EXCHANGE_WS_URL:ws://localhost:9091/exchange/marketdata}
+
+market-data:
+  symbols: ${MARKET_DATA_SYMBOLS:AAPL,MSFT}
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:demo-secret-demo-secret-demo-secret-1234}

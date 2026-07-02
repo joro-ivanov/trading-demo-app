@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: portfolio-service
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    connect-retries: 10
+    connect-retries-interval: 2s
+    # Per-service location so migrations don't collide on a shared classpath (integration-tests).
+    locations: classpath:db/migration/portfolio
+  kafka:
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+server:
+  port: 8083
+  error:
+    include-message: always
+    include-binding-errors: always
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:demo-secret-demo-secret-demo-secret-1234}

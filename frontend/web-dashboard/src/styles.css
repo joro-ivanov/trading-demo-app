@@ -1,0 +1,165 @@
+:root {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --fg: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --up: #4ade80;
+  --down: #f87171;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #334155;
+}
+
+.header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.session {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: var(--accent);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #334155;
+}
+
+.price {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pnl-up {
+  color: var(--up);
+}
+
+.pnl-down {
+  color: var(--down);
+}
+
+.empty {
+  color: var(--muted);
+}
+
+form {
+  display: grid;
+  gap: 0.4rem;
+}
+
+label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+input,
+select,
+button {
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: var(--fg);
+}
+
+button {
+  cursor: pointer;
+  background: var(--accent);
+  color: #0f172a;
+  font-weight: 600;
+  border: none;
+  margin-top: 0.5rem;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.error {
+  color: var(--down);
+  margin: 0.5rem 0 0;
+}
+
+.login {
+  max-width: 320px;
+  margin: 12vh auto;
+  padding: 2rem;
+}
+
+.fills ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fills li {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #334155;
+  font-variant-numeric: tabular-nums;
+}
+
+.auth {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.auth-switch {
+  margin-top: 1rem;
+}
+
+.auth-switch .link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+}

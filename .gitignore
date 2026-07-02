@@ -1,0 +1,45 @@
+# IDEs and local tooling
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+.codex/
+.agents/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Java / Maven / Testcontainers
+**/target/
+*.class
+*.log
+*.tmp
+*.versionsBackup
+hs_err_pid*
+replay_pid*
+
+# Test reports and runtime artifacts
+**/.allure/
+**/surefire-reports/
+**/failsafe-reports/
+**/allure-results/
+**/allure-report/
+**/playwright-videos/
+**/playwright-traces/
+**/test-output/
+*.dump
+*.dumpstream
+
+# Frontend / Node / Vite
+**/node_modules/
+**/dist/
+**/coverage/
+**/.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

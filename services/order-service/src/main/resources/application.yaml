@@ -1,0 +1,54 @@
+spring:
+  application:
+    name: order-service
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    connect-retries: 10
+    connect-retries-interval: 2s
+    # Per-service location so migrations don't collide on a shared classpath (integration-tests).
+    locations: classpath:db/migration/order
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      # Consume the matcher's outcomes (fills / orders.resting) to resolve order status.
+      group-id: order-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# Upstream exchange (WireMock-mocked in tests; real endpoint via env in docker-compose)
+exchange:
+  base-url: ${EXCHANGE_BASE_URL:http://localhost:9090}
+
+# portfolio-service, queried for the pre-trade short-sell guard (SELL) and funds guard (BUY)
+portfolio:
+  base-url: ${PORTFOLIO_BASE_URL:http://localhost:8083}
+
+# market-data-service, queried for the latest price to value a BUY (pre-trade funds guard)
+market-data:
+  base-url: ${MARKET_DATA_BASE_URL:http://localhost:8081}
+
+# Working-hours gate. enabled=false makes the market always open (used by the integration flagship).
+trading:
+  market-hours:
+    enabled: ${TRADING_MARKET_HOURS_ENABLED:true}
+    open: ${TRADING_OPEN:09:30}
+    close: ${TRADING_CLOSE:16:00}
+    zone: ${TRADING_ZONE:America/New_York}
+
+# Shared JWT secret (must match auth-service and the other services)
+security:
+  jwt:
+    secret: ${JWT_SECRET:demo-secret-demo-secret-demo-secret-1234}
