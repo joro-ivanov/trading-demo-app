@@ -200,8 +200,10 @@ Typical flow:
 
 The devcontainer currently:
 
-- uses the `mcr.microsoft.com/devcontainers/typescript-node:24` image
-- runs `npm install` automatically after creation
+- uses the `mcr.microsoft.com/devcontainers/typescript-node:24` image (Node 24 everywhere: `.nvmrc`,
+  `package.json` `engines`, the devcontainer and the production `Dockerfile`)
+- installs Mozilla's official Firefox + geckodriver for the WDIO component tests (`FIREFOX_BIN` /
+  `GECKODRIVER_PATH`; amd64 and arm64), then runs `npm install`
 - forwards port `5173` for the Vite dev server
 
 Common frontend commands:
@@ -213,6 +215,14 @@ npm run lint         # ESLint (Rules of Hooks + layer boundaries)
 npm run test:unit    # Vitest
 npm run test:component   # WDIO component tests
 npm run depcruise    # dependency-cruiser boundary check
+```
+
+Or run all of them in a throwaway container, with nothing installed on the host (details in
+[frontend/web-dashboard/README.md](frontend/web-dashboard/README.md)):
+
+```bash
+cd frontend/web-dashboard
+docker build -f Dockerfile.test -t web-dashboard-tests . && docker run --rm web-dashboard-tests
 ```
 
 Frontend rule:

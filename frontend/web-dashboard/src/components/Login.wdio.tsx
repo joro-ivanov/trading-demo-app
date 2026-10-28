@@ -10,7 +10,7 @@ describe('Login (component, real browser)', () => {
     window.fetch = async () => new Response('', { status: 401 })
     render(<Login onLogin={() => undefined} />)
 
-    await $('button=Enter').click()
+    await $('button[type="submit"]').click()
 
     await expect($('.error')).toBeDisplayed()
     await expect($('.error')).toHaveText('Login failed — try demo / password')
@@ -22,7 +22,7 @@ describe('Login (component, real browser)', () => {
     let captured: unknown = null
     render(<Login onLogin={(session) => (captured = session)} />)
 
-    await $('button=Enter').click()
+    await $('button[type="submit"]').click()
 
     await browser.waitUntil(() => captured !== null, { timeoutMsg: 'onLogin was never called' })
     expect(captured).toEqual({ token: 'jwt', username: 'demo' })

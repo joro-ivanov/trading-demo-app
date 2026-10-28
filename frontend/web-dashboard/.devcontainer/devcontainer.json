@@ -1,8 +1,13 @@
 {
   "name": "web-dashboard",
   "image": "mcr.microsoft.com/devcontainers/typescript-node:24",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "workspaceFolder": "/workspace",
-  "postCreateCommand": "npm install",
+  "postCreateCommand": "sudo frontend/web-dashboard/scripts/install-firefox.sh && cd frontend/web-dashboard && npm install",
+  "containerEnv": {
+    "FIREFOX_BIN": "/usr/bin/firefox",
+    "GECKODRIVER_PATH": "/usr/local/bin/geckodriver"
+  },
   "forwardPorts": [5173],
   "customizations": {
     "vscode": {

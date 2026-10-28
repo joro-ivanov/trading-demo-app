@@ -25,7 +25,7 @@ describe('Register (component, real browser)', () => {
     render(<Register onRegistered={() => undefined} />)
 
     await fill('validuser', 'not-an-email', 's3cret-pw', 's3cret-pw')
-    await $('button=Register').click()
+    await $('button[type="submit"]').click()
     await browser.pause(200)
 
     expect(calls).toBe(0)
@@ -41,7 +41,7 @@ describe('Register (component, real browser)', () => {
 
     await fill('validuser', 'valid@demo.example.com', 's3cret-pw', 'different')
 
-    await expect($('button=Register')).toBeDisabled()
+    await expect($('button[type="submit"]')).toBeDisabled()
     await expect($('.error')).toHaveText('Passwords do not match.')
     expect(calls).toBe(0)
   })
@@ -56,7 +56,7 @@ describe('Register (component, real browser)', () => {
     render(<Register onRegistered={(session) => (captured = session)} />)
 
     await fill('carol', 'carol@demo.example.com', 's3cret-pw', 's3cret-pw')
-    await $('button=Register').click()
+    await $('button[type="submit"]').click()
 
     await browser.waitUntil(() => captured !== null, { timeoutMsg: 'onRegistered was never called' })
     expect(captured).toEqual({ token: 'jwt', username: 'carol' })
@@ -69,7 +69,7 @@ describe('Register (component, real browser)', () => {
     render(<Register onRegistered={() => undefined} />)
 
     await fill('alice', 'alice@demo.example.com', 's3cret-pw', 's3cret-pw')
-    await $('button=Register').click()
+    await $('button[type="submit"]').click()
 
     await expect($('.error')).toHaveText('That username is already taken.')
   })

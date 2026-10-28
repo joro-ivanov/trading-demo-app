@@ -1,0 +1,24 @@
+# Runs the frontend checks and test suites in a container, so nothing needs installing on the host:
+# lint, typecheck, dependency rules, Vitest unit tests and WebdriverIO component tests.
+#
+#   docker build -f Dockerfile.test -t web-dashboard-tests .
+#   docker run --rm web-dashboard-tests                          # everything
+#   docker run --rm web-dashboard-tests npm run test:component   # one suite
+#
+# Node 24 matches .nvmrc, package.json "engines" and the production image. The browser is Mozilla's
+# official Firefox + geckodriver (amd64 and arm64), installed by the same script the devcontainer uses;
+# wdio.conf.ts picks them up through FIREFOX_BIN / GECKODRIVER_PATH.
+FROM node:24-bookworm-slim
+
+COPY scripts/install-firefox.sh /tmp/install-firefox.sh
+RUN /tmp/install-firefox.sh && rm /tmp/install-firefox.sh
+
+ENV FIREFOX_BIN=/usr/bin/firefox \
+    GECKODRIVER_PATH=/usr/local/bin/geckodriver
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+
+CMD ["sh", "-c", "npm run lint && npm run typecheck && npm run depcruise && npm run test:unit && npm run test:component"]
