@@ -11,6 +11,48 @@
     <logger name="org.apache.kafka" level="WARN"/>
     <logger name="org.hibernate" level="WARN"/>
     <logger name="org.springframework" level="WARN"/>
+    <!-- Container logs (Testcontainers Slf4jLogConsumer, logger "container.<name>") are written verbatim to
+         target/container-logs/<name>.log, separate from the service log; LogScan checks them. -->
+    <appender name="CONTAINER_POSTGRES-ORDER" class="ch.qos.logback.core.FileAppender">
+        <file>target/container-logs/postgres-order.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+    <logger name="container.postgres-order" level="INFO" additivity="false">
+        <appender-ref ref="CONTAINER_POSTGRES-ORDER"/>
+    </logger>
+    <appender name="CONTAINER_POSTGRES-PORTFOLIO" class="ch.qos.logback.core.FileAppender">
+        <file>target/container-logs/postgres-portfolio.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+    <logger name="container.postgres-portfolio" level="INFO" additivity="false">
+        <appender-ref ref="CONTAINER_POSTGRES-PORTFOLIO"/>
+    </logger>
+    <appender name="CONTAINER_KAFKA" class="ch.qos.logback.core.FileAppender">
+        <file>target/container-logs/kafka.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+    <logger name="container.kafka" level="INFO" additivity="false">
+        <appender-ref ref="CONTAINER_KAFKA"/>
+    </logger>
+    <appender name="CONTAINER_REDIS" class="ch.qos.logback.core.FileAppender">
+        <file>target/container-logs/redis.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+    <logger name="container.redis" level="INFO" additivity="false">
+        <appender-ref ref="CONTAINER_REDIS"/>
+    </logger>
     <root level="INFO">
         <appender-ref ref="STDOUT"/>
     </root>

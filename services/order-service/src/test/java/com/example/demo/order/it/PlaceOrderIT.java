@@ -304,17 +304,24 @@ class PlaceOrderIT extends OrderITBase {
         });
     }
 
-    // An exchange 5xx is not handled by the service: the request fails with 500, the transaction rolls
-    // back, and nothing is persisted or published (no phantom order/fill).
+    // An exchange 5xx is a bad upstream answer, not a bug in order-service: 502 with the stable error
+    // body, the transaction rolls back, and nothing is persisted or published (no phantom order/fill).
     @Test
-    void anExchangeServerErrorRollsBackWithNoPersistOrPublish() {
+    void anExchangeServerErrorIsABadGatewayWithNoPersistOrPublish() {
         EXCHANGE.stubFor(ExchangeStubs.failsWithServerError());
 
-        api(tokenFor("exchange-5xx")).body("{\"symbol\":\"EXFAIL\",\"side\":\"BUY\",\"quantity\":1}").post("/orders")
-                .then().statusCode(500);
+        String response = api(tokenFor("exchange-5xx")).body("{\"symbol\":\"EXFAIL\",\"side\":\"BUY\",\"quantity\":1}")
+                .post("/orders")
+                .then().statusCode(502)
+                .extract().asString();
 
+        ApiError error = Json.read(response, ApiError.class);
         List<String> published = KAFKA_PROBE.valuesWithin(OrderEventPublisher.TOPIC, "EXFAIL", Duration.ofSeconds(5));
         assertSoftly(softly -> {
+            softly.assertThat(error.status()).isEqualTo(502);
+            softly.assertThat(error.error()).isEqualTo("Bad Gateway");
+            softly.assertThat(error.message()).isEqualTo("Exchange returned an invalid response");
+            softly.assertThat(error.path()).isEqualTo("/orders");
             softly.assertThat(published).isEmpty();
             softly.assertThat(repository.findByOwner("exchange-5xx")).isEmpty();
         });

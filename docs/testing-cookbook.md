@@ -30,6 +30,18 @@ services/<svc>/src/test/java/com/example/demo/<pkg>/it/
   `@DynamicPropertySource`.
 - External HTTP is a `WireMockServer`; the exchange feed is a WireMock **WS** message stub. Reset
   in `@BeforeEach`, assert no unmatched requests in `@AfterEach`.
+- Each container is created with `.withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.<name>")))`.
+  `logback-test.xml` writes it to `target/container-logs/<name>.log`, and LogScan checks those files
+  next to the service log.
+- Downstream faults: the service answers **503** when a dependency is unreachable or slower than its
+  read timeout, and **502** for an error status or an unreadable body. **Never expect a 500** (PMD,
+  ArchUnit and TestLint enforce this).
+- Timeouts, deterministically:
+  - In the base class's `@DynamicPropertySource`, set the dependency's read timeout short, e.g.
+    `registry.add("exchange.read-timeout", () -> "1s")`.
+  - Stub a fixed delay well beyond it (≥ 3×, e.g. `withFixedDelay(3000)`).
+  - Assert 503 `<Dependency> unavailable`.
+  - Never test near the boundary (a delay ≈ the timeout is a race).
 - Time via a `@Primary` `MutableClock` (market-hours cases use exact boundary instants).
 - Send a JWT: `Jwt.issue("tester", SECRET, 300)` → `Authorization: Bearer …`; cover missing,
   malformed, wrong-signature and expired tokens → **401**.
@@ -58,7 +70,10 @@ servers (the WS upgrade filter on `/*` breaks plain REST).
 Boots the services as **isolated subprocesses** from their `-boot` jars (shared classpath would mix
 auto-configs / config files). Shared infra via Testcontainers; exchange via two WireMock servers.
 Mint one JWT and pass it on every REST call, the STOMP CONNECT, and the health probe. See
-`OrderToPortfolioFlowIT` + `Stack`.
+`OrderToPortfolioFlowIT` + `Stack`. Container logs go to `integration-tests/target/container-logs/`
+and each service process logs to `target/it-<svc>.log` (both checked by LogScan). `Stack.destroy` waits for
+the processes to exit (graceful shutdown, 30 s budget) before the containers stop. Otherwise the services
+lose Kafka/Redis mid-shutdown.
 
 ## 4. API + WS e2e (facade service objects)
 
@@ -102,6 +117,9 @@ Methods are `static`, return `ApiResponse`, **no validation** (negative cases mu
   The backend service modules add `build/pmd/it-conventions.xml`, which also bans `&&`, `||`, `!`, `==`, `!=`
   and `forEach`/`filter`/`ifPresent`/`orElseGet` callbacks: one scenario per test, and
   `@ParameterizedTest` wherever cases differ only in data. `harness/` packages are exempt.
+- PMD `build/pmd/no-internal-server-error.xml` (backend production **and** test code) bans producing or
+  expecting HTTP 500: `statusCode(500)`, `INTERNAL_SERVER_ERROR`, `internalServerError()`. ArchUnit's
+  `neverProduceInternalServerError` checks the same on production bytecode.
 - ArchUnit (`<Svc>IntegrationTestArchitectureTest`, one per service) forbids **weak or
   non-deterministic assertions** in ITs:
   - AssertJ partial, range and presence-only assertions (`contains*`, `doesNotContain*`, `startsWith`,

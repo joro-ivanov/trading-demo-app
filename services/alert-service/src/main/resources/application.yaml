@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: alert-service
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    connect-retries: 10
+    connect-retries-interval: 2s
+    # Per-service location so migrations don't collide on a shared classpath.
+    locations: classpath:db/migration/alert
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+server:
+  port: 8085
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# market-data-service, queried to validate an alert's symbol on creation.
+market-data:
+  base-url: ${MARKET_DATA_BASE_URL:http://localhost:8081}
+  connect-timeout: ${MARKET_DATA_CONNECT_TIMEOUT:2s}
+  read-timeout: ${MARKET_DATA_READ_TIMEOUT:3s}
+
+alerts:
+  max-active-per-owner: ${ALERTS_MAX_ACTIVE_PER_OWNER:20}
+
+# Shared JWT secret (must match auth-service and the other services)
+security:
+  jwt:
+    secret: ${JWT_SECRET:demo-secret-demo-secret-demo-secret-1234}

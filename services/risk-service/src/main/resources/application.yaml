@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: risk-service
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    connect-retries: 10
+    connect-retries-interval: 2s
+    # Per-service location so migrations don't collide on a shared classpath (integration-tests).
+    locations: classpath:db/migration/risk
+
+server:
+  port: 8087
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# portfolio-service, queried for the current holding (resulting-position rule)
+portfolio:
+  base-url: ${PORTFOLIO_BASE_URL:http://localhost:8083}
+  connect-timeout: ${PORTFOLIO_CONNECT_TIMEOUT:2s}
+  read-timeout: ${PORTFOLIO_READ_TIMEOUT:3s}
+
+risk:
+  # Limits applied to a user who has not set their own.
+  defaults:
+    max-order-notional: ${RISK_DEFAULT_MAX_ORDER_NOTIONAL:100000}
+    max-position-quantity: ${RISK_DEFAULT_MAX_POSITION_QUANTITY:10000}
+  # Upper bounds a user may set via PUT /risk/limits.
+  max-allowed:
+    max-order-notional: ${RISK_MAX_ALLOWED_ORDER_NOTIONAL:10000000}
+    max-position-quantity: ${RISK_MAX_ALLOWED_POSITION_QUANTITY:1000000}
+
+# Shared JWT secret (must match auth-service and the other services)
+security:
+  jwt:
+    secret: ${JWT_SECRET:demo-secret-demo-secret-demo-secret-1234}

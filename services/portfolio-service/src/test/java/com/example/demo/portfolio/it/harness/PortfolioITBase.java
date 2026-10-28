@@ -3,10 +3,12 @@ package com.example.demo.portfolio.it.harness;
 import java.math.BigDecimal;
 import java.util.List;
 
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -36,10 +38,12 @@ public abstract class PortfolioITBase {
     protected static final String TOKEN = token(TESTER);
 
     @SuppressWarnings("resource")
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine")
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.postgres")));
 
     @SuppressWarnings("resource")
-    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0");
+    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0")
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.kafka")));
 
     protected static final KafkaProbe KAFKA_PROBE;
 

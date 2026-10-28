@@ -2,3 +2,6 @@
 CREATE DATABASE orderdb;
 CREATE DATABASE portfoliodb;
 CREATE DATABASE authdb;
+CREATE DATABASE alertdb;
+CREATE DATABASE watchlistdb;
+CREATE DATABASE riskdb;

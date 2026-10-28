@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<ruleset name="no-internal-server-error"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        Backend modules, production AND test code: a 500 means an unforeseen bug in this service, so code
+        must never produce one on purpose and tests must never expect one. Outages are 503 (dependency or
+        database unreachable / timed out) and bad upstream answers 502 - see common Downstream and
+        ApiErrorHandler. Test harness/ packages are exempt: a WireMock stub may simulate a DEPENDENCY
+        answering 500 (that is the scenario, and this service must answer 502).
+    </description>
+
+    <exclude-pattern>.*[/\\]harness[/\\].*</exclude-pattern>
+
+    <rule name="NoInternalServerError"
+          language="java"
+          message="Never produce or expect HTTP 500: outages are 503, bad upstream answers 502 (common Downstream / ApiErrorHandler)"
+          class="net.sourceforge.pmd.lang.rule.xpath.XPathRule">
+        <description>
+            Flags HttpStatus.INTERNAL_SERVER_ERROR / HttpServletResponse.SC_INTERNAL_SERVER_ERROR (also in
+            @ResponseStatus and via static import), ResponseEntity.internalServerError(), status matchers
+            for 500, and a literal 500 passed as a status (statusCode(500), status(500), HttpStatus.valueOf(500)).
+        </description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value><![CDATA[
+//FieldAccess[@Name = ('INTERNAL_SERVER_ERROR', 'SC_INTERNAL_SERVER_ERROR')]
+| //VariableAccess[@Name = ('INTERNAL_SERVER_ERROR', 'SC_INTERNAL_SERVER_ERROR')]
+| //MethodCall[@MethodName = ('internalServerError', 'isInternalServerError')]
+| //MethodCall[@MethodName = ('statusCode', 'status', 'valueOf', 'resolve')]/ArgumentList/NumericLiteral[@ValueAsInt = 500]
+                ]]></value>
+            </property>
+        </properties>
+    </rule>
+</ruleset>

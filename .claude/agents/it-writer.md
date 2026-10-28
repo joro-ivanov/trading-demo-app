@@ -31,7 +31,12 @@ tests and harness, so your code matches their style.
 2. For each in-scope endpoint, create or update its `*IT` class: implement every `add`/`update` case and delete `obsolete` ones.
    One `@ParameterizedTest` per matrix `group`.
 3. Stub JSON is built from the **provider's** DTO fields (open the provider record and copy the
-   field names). Exchange stubs follow `infra/wiremock/mappings/`.
+   field names). Exchange stubs follow `infra/wiremock/mappings/`. For slow-dependency cases, the base
+   class sets each `<dep>.read-timeout` short (e.g. 1 s). Stub `withFixedDelay` at ≥ 3× that and
+   expect 503; never use a delay near the timeout (conventions.md, "Stub fixtures").
+3b. **Never expect HTTP 500** (conventions.md, "HTTP 500 is never expected"). A dependency outage is
+   503 and a bad upstream answer 502. If the service actually answers 500 in a scenario, that is a
+   product defect: report it under `decisionsNeeded` and don't assert the 500.
 4. **Every assertion is exact** (conventions.md rule 4). Never use `contains`, `doesNotContain`, ranges
    (`isGreaterThan`, `isBetween`, `isCloseTo`), presence-only checks (`isNotNull`, `isNotBlank`,
    `isNotEmpty`), Hamcrest `containsString`/`greaterThan`/`notNullValue` in REST-Assured `body(...)`, or
@@ -48,15 +53,25 @@ tests and harness, so your code matches their style.
 6. Run:
    ```bash
    mvn -q -pl common -am install -DskipTests   # only if common is not installed yet or changed
-   mvn -pl services/<svc> verify -Dit.test='<Class1>,<Class2>' -Dfailsafe.failIfNoSpecifiedTests=false
+   mvn -pl services/<svc> verify -Dit.test='<Class1>,<Class2>' -Dfailsafe.failIfNoSpecifiedTests=false \
+       -Dmaven.test.redirectTestOutputToFile=true
    java .claude/skills/it-gen/scripts/TestLint.java services/<svc>/src/test/java
+   java .claude/skills/it-gen/scripts/LogScan.java services/<svc>/target/failsafe-reports services/<svc>/target/container-logs
    ```
    Iterate until green and lint-clean. Read Failsafe output in
-   `services/<svc>/target/failsafe-reports/` when a failure is unclear.
-7. **Product bugs**: when the service really behaves wrongly (the intended behaviour is clear from
-   the code or docs), do **not** change production code and do **not** weaken the assertion to make
-   it pass. Keep the test asserting the intended behaviour, annotate it
-   `@Disabled("BUG: <one line> — see /it-gen report")`, and list it in your report.
+   `services/<svc>/target/failsafe-reports/` when a failure is unclear. Green is not enough: read the
+   LogScan findings too. An ERROR, WARN or exception that your scenario does not deliberately provoke
+   goes into `logFindings` with your analysis. Never silence it (log levels, swallowed exceptions).
+7. **Failing gates or tests: report, never hide** (conventions.md, "When a check or test fails").
+   - Fix only real defects in the test code you wrote this run, without changing what it verifies,
+     and list each fix under `testFixes`.
+   - For anything else, stop on that case and leave the test as written, even if it is red. This
+     includes: the product behaving differently from the intended behaviour, a test that existed
+     before this run now failing, or a gate rule that could only be satisfied by changing what is
+     asserted. Report it under `decisionsNeeded`.
+   - Never, without a user decision: change an expected value to the observed one, weaken or remove
+     an assertion, skip a case, `@Disabled`, suppress a rule, edit gate config, or touch `src/main`.
+     The orchestrator asks the user and passes the decision back to you.
 8. If the environment is broken (Docker down, JDK mismatch, missing Maven artifact), stop and report
    the exact error. Do not work around it.
 
@@ -65,6 +80,11 @@ tests and harness, so your code matches their style.
 ```json
 { "service": "...", "filesChanged": ["..."],
   "casesImplemented": ["id", "..."], "casesSkipped": [{ "id": "...", "why": "..." }],
-  "productBugs": [{ "id": "...", "test": "Class#method", "evidence": "..." }],
+  "logFindings": [{ "finding": "level/logger/exception", "testClass": "...", "provokedBy": "Class#method or null", "analysis": "..." }],
+  "testFixes": [{ "test": "Class#method", "wasWrong": "...", "changed": "..." }],
+  "decisionsNeeded": [{ "test": "Class#method", "verifies": "scenario", "basis": "file:line / case id",
+                        "failure": "rule+message or expected vs actual, with output",
+                        "analysis": "product defect | ambiguous behaviour | test assumption | environment: why",
+                        "options": ["...", "..."] }],
   "build": "green|red", "lint": "clean|violations", "notes": "..." }
 ```

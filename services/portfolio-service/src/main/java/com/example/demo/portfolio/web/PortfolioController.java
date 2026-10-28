@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.portfolio.domain.PositionEntity;
 import com.example.demo.portfolio.domain.PositionRepository;
+import com.example.demo.portfolio.service.PortfolioSummaryService;
 import com.example.demo.portfolio.service.RecentFillsService;
 
 /**
@@ -25,15 +26,24 @@ public class PortfolioController {
 
     private final PositionRepository repository;
     private final RecentFillsService recentFills;
+    private final PortfolioSummaryService summaries;
 
-    public PortfolioController(PositionRepository repository, RecentFillsService recentFills) {
+    public PortfolioController(PositionRepository repository, RecentFillsService recentFills,
+                               PortfolioSummaryService summaries) {
         this.repository = repository;
         this.recentFills = recentFills;
+        this.summaries = summaries;
     }
 
     @GetMapping
     public List<PositionResponse> positions(Authentication authentication) {
         return repository.findByOwner(authentication.getName()).stream().map(PositionResponse::from).toList();
+    }
+
+    /** Cash + market value + unrealized P&L across the caller's open positions. */
+    @GetMapping("/summary")
+    public PortfolioSummaryResponse summary(Authentication authentication) {
+        return PortfolioSummaryResponse.from(summaries.summarize(authentication.getName()));
     }
 
     @GetMapping("/holdings/{symbol}")

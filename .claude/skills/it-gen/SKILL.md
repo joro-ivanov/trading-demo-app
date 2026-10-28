@@ -74,19 +74,65 @@ For each service, after its writer reports:
    writer to undo. Never revert files yourself, and never touch the user's own pre-existing changes.
 2. **Rerun 3×** (determinism):
    ```bash
-   mvn -pl services/<svc> verify -Dit.test='<in-scope IT classes>' -Dfailsafe.failIfNoSpecifiedTests=false
+   mvn -pl services/<svc> verify -Dit.test='<in-scope IT classes>' -Dfailsafe.failIfNoSpecifiedTests=false \
+       -Dmaven.test.redirectTestOutputToFile=true
+   mkdir -p "$SCRATCH/it-gen/<svc>/round<R>/run<N>"                                       # after each run:
+   cp -R services/<svc>/target/failsafe-reports services/<svc>/target/container-logs "$SCRATCH/it-gen/<svc>/round<R>/run<N>/"
    ```
    Run it three times sequentially. Record pass/fail per run and the failing tests (from
    `target/failsafe-reports/`). This also runs PMD, Checkstyle and ArchUnit.
+   `redirectTestOutputToFile` writes each IT class's stdout (service and test logs) to
+   `<Class>-output.txt`. Each container's own log (Postgres, Kafka, Redis) is written by Testcontainers'
+   `Slf4jLogConsumer` to `target/container-logs/<name>.log`. The copy keeps every run's logs before the next
+   run overwrites them.
+2b. **Log scan** (service and test logs, all three runs):
+   ```bash
+   java .claude/skills/it-gen/scripts/LogScan.java \
+       run1="$SCRATCH/it-gen/<svc>/round<R>/run1" run2=".../run2" run3=".../run3"
+   ```
+   This lists every ERROR, WARN and exception, from service, test **and container** logs (with cause
+   chain and first `com.example.demo` frame),
+   grouped by root cause, with counts per run and per test class. It filters nothing. A finding that
+   appears in only some runs is a nondeterminism signal. `unhandledHttp500: true` means the service answered
+   500, which is always a product defect (conventions.md, "HTTP 500 is never expected").
 3. **No-logic lint**:
    ```bash
    java .claude/skills/it-gen/scripts/TestLint.java <each in-scope IT class path>
    ```
 
+4. **Classify every failure**, from the reruns, PMD, Checkstyle, ArchUnit or TestLint, and every
+   **unexpected** LogScan finding, following
+   conventions.md "When a check or test fails":
+   - A defect in test code the writer created this run → back to the writer to fix (step 6).
+   - Everything else → step 4a. That includes: a LogScan ERROR/exception/WARN that no test scenario
+     deliberately provokes (classified by it-reviewer, see step 5), even when every test passed; the product differs from the intended behaviour; a
+     test that existed before this run fails (in any module); the only fix would change what is
+     asserted; or the writer's `decisionsNeeded`.
+
+## 4a. Decision gate: ask the user, never sweep under the rug
+
+Pause **that service** (other services continue). Ask the user with `AskUserQuestion`, one question
+per failure, at most 4 per call. Each question states:
+- what the test verifies
+- the basis (code line or case)
+- the exact failure (expected vs actual, or the rule and message)
+- your analysis of why it fails
+
+The options are specific, e.g.:
+- "Product defect: leave the test red, I'll fix the product"
+- "Intended behaviour: update the expected value"
+- "Track as known issue (@Disabled with issue reference)"
+
+Pass the answer to the writer verbatim, and record it in a `userDecisions` list for the reviewer and
+the final report. Never pick an option on the user's behalf, even when the score loop would converge
+faster.
+
 ## 5. Review: it-reviewer + it-sme `coverage` (in parallel, one message)
 
 - `it-reviewer`: in-scope test/harness paths, the matrix, and the gate results (scope violations,
-  3 rerun results, build/PMD/Checkstyle/ArchUnit status, TestLint output). Do **not** pass the
+  3 rerun results, build/PMD/Checkstyle/ArchUnit status, TestLint output, the LogScan JSON) and the
+  `userDecisions` list. The reviewer classifies every LogScan finding as `expected` (cite the test that
+  deliberately provokes it and why) or `unexpected`; unexpected ones go to step 4a. Do **not** pass the
   writer's report or reasoning. The review must be independent.
 - `it-sme` `Mode: coverage`: the matrix, the changed test files, and the reviewer JSON from the
   previous round (if any).
@@ -94,7 +140,8 @@ For each service, after its writer reports:
 ## 6. Loop
 
 A service is **done** when: score ≥ 9.0, `blocking` is empty, `missingMust` is empty, the gates are
-clean, and all 3 reruns passed.
+clean, and all 3 reruns passed, **or** every remaining failure has a recorded user decision (e.g. "product
+defect, leave red"). Such a service is reported as done-with-known-failures, never as green.
 
 Otherwise send the writer one consolidated fix list: blocking issues → missingMust/newCases (must)
 → weaklyCovered → improvements. Then go back to step 4. **At most 4 rounds per service.** After
@@ -104,6 +151,8 @@ Print one progress line per round: `order-service round 2: 8.1 → 9.3, blocking
 
 ## 7. Final report
 
-Per service: in-scope endpoints, files changed, cases added/updated/removed, score history, rerun results, `@Disabled("BUG: …")` tests with evidence (**product
-bugs need a human decision**), and open items if the round limit was hit. End with the exact
+Per service: in-scope endpoints, files changed, cases added/updated/removed, score history, rerun results, a **log findings** table (every LogScan finding: level, logger/exception, first app
+frame, count per run, test class, expected/unexpected with the reviewer's reason), every failure
+that went through the decision gate (test, failure, analysis, the
+user's decision), the writer's `testFixes`, and open items if the round limit was hit. End with the exact
 `mvn` command to rerun the new tests. Do not commit. The user reviews the diff.

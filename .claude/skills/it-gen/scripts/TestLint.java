@@ -41,6 +41,9 @@ public class TestLint {
             new Rule("comparison == / != (assert instead)", Pattern.compile("[=!]=")),
             new Rule("callback loop/branch", Pattern.compile(
                     "\\.(forEach|forEachOrdered|ifPresent|ifPresentOrElse|orElseGet|filter|takeWhile|dropWhile)\\s*\\(")),
+            // Same as PMD NoInternalServerError: a 500 means a bug; outages are 503, bad upstream answers 502.
+            new Rule("expects HTTP 500 (outage = 503, bad upstream answer = 502)", Pattern.compile(
+                    "statusCode\\s*\\(\\s*500\\s*\\)|(?<![\\w$])status\\s*\\(\\s*500\\s*\\)|INTERNAL_SERVER_ERROR|isInternalServerError|internalServerError\\s*\\("), true),
             // Same list as the <Svc>IntegrationTestArchitectureTest ArchUnit rule (the authority).
             new Rule("weak/non-deterministic assertion (assert the exact value)", Pattern.compile(
                     "(?<![\\w$])(contains|containsAll|containsAnyOf|containsAnyElementsOf|containsSequence"

@@ -8,12 +8,14 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -24,6 +26,7 @@ import com.example.demo.order.domain.OrderStatus;
 import com.example.demo.order.it.harness.stubs.ExchangeStubs;
 import com.example.demo.order.it.harness.stubs.MarketDataStubs;
 import com.example.demo.order.it.harness.stubs.PortfolioStubs;
+import com.example.demo.order.it.harness.stubs.RiskStubs;
 import com.example.demo.order.web.OrderResponse;
 import com.github.tomakehurst.wiremock.WireMockServer;
 
@@ -34,10 +37,10 @@ import io.restassured.specification.RequestSpecification;
 /**
  * Shared harness for the order-service integration tests (docs/DESIGN.md §7.2): the real service on a
  * random port against real Postgres + Confluent cp-kafka (Testcontainers), driven over HTTP with
- * REST-Assured. Only external communication is mocked: the exchange, portfolio-service and
- * market-data-service are three WireMock servers. Containers and servers are singletons started once
- * per JVM, so every {@code *IT} class shares them and the cached Spring context. The injected
- * {@code Clock} is a {@link MutableClock}, reset to {@link #DURING_HOURS} before each test.
+ * REST-Assured. Only external communication is mocked: the exchange, portfolio-service,
+ * market-data-service and risk-service are four WireMock servers (risk allows every order by
+ * default). Containers and servers are singletons started once per JVM, so every {@code *IT} class
+ * shares them and the cached Spring context. The injected {@code Clock} is a {@link MutableClock}, reset to {@link #DURING_HOURS} before each test.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestClockConfig.class)
@@ -57,13 +60,16 @@ public abstract class OrderITBase {
     }
 
     @SuppressWarnings("resource")
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine")
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.postgres")));
     @SuppressWarnings("resource")
-    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0");
+    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0")
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.kafka")));
 
     protected static final WireMockServer EXCHANGE = new WireMockServer(options().dynamicPort());
     protected static final WireMockServer PORTFOLIO = new WireMockServer(options().dynamicPort());
     protected static final WireMockServer MARKET_DATA = new WireMockServer(options().dynamicPort());
+    protected static final WireMockServer RISK = new WireMockServer(options().dynamicPort());
 
     protected static final KafkaProbe KAFKA_PROBE;
 
@@ -73,6 +79,7 @@ public abstract class OrderITBase {
         EXCHANGE.start();
         PORTFOLIO.start();
         MARKET_DATA.start();
+        RISK.start();
         KAFKA_PROBE = new KafkaProbe(KAFKA.getBootstrapServers());
     }
 
@@ -94,6 +101,12 @@ public abstract class OrderITBase {
         registry.add("exchange.base-url", EXCHANGE::baseUrl);
         registry.add("portfolio.base-url", PORTFOLIO::baseUrl);
         registry.add("market-data.base-url", MARKET_DATA::baseUrl);
+        registry.add("risk.base-url", RISK::baseUrl);
+        // Short read timeouts so slow-dependency cases (stubbed delay ≥ 3× this) fail fast as 503.
+        registry.add("exchange.read-timeout", () -> "1s");
+        registry.add("portfolio.read-timeout", () -> "1s");
+        registry.add("market-data.read-timeout", () -> "1s");
+        registry.add("risk.read-timeout", () -> "1s");
     }
 
     @BeforeEach
@@ -101,9 +114,11 @@ public abstract class OrderITBase {
         EXCHANGE.resetAll();
         PORTFOLIO.resetAll();
         MARKET_DATA.resetAll();
+        RISK.resetAll();
         EXCHANGE.stubFor(ExchangeStubs.acceptsOrders());
         PORTFOLIO.stubFor(PortfolioStubs.holdsPlentyOfEverything());
         MARKET_DATA.stubFor(MarketDataStubs.hasNoPrices());
+        RISK.stubFor(RiskStubs.allowsEverything());
         clock.set(DURING_HOURS);
     }
 
@@ -113,6 +128,7 @@ public abstract class OrderITBase {
         assertThat(EXCHANGE.findAllUnmatchedRequests()).isEmpty();
         assertThat(PORTFOLIO.findAllUnmatchedRequests()).isEmpty();
         assertThat(MARKET_DATA.findAllUnmatchedRequests()).isEmpty();
+        assertThat(RISK.findAllUnmatchedRequests()).isEmpty();
     }
 
     /** An unauthenticated JSON request to the running service. */

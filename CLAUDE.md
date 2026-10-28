@@ -10,7 +10,7 @@ integration tests with Testcontainers + WireMock that need no deployed environme
   (`java File.java`), not Python.
 
 ## Layout
-- `services/{auth,order,market-data,portfolio,notification}-service`: Spring Boot services
+- `services/{auth,order,market-data,portfolio,notification,alert,watchlist,risk}-service`: Spring Boot services
   (`web/` controllers + DTOs, `domain/` entities/repos, `service/`, `consume/` Kafka listeners,
   `events/` publishers, Flyway migrations in `src/main/resources/db/migration/<svc>/`)
 - `common/`: shared `Jwt`, `ApiSecurityConfig` (JWT auth only, no roles), `ApiErrorHandler`, `Money`, `Clocks`, `MarketHours`
@@ -38,6 +38,41 @@ cd frontend/web-dashboard && npm run lint && npm run typecheck && npm run test:u
 - Per-service ITs mock **only external communication** (WireMock HTTP/WS); Postgres/Kafka/Redis are real
   containers. Never mock internal beans.
 - Never edit an existing Flyway migration (a hook blocks it); add `V<n+1>__*.sql`.
+
+## When a check or test fails: report it, never hide it
+Applies to Checkstyle, PMD, ArchUnit, TestLint and every functional test (unit, per-service IT,
+flagship, e2e). Don't change a test or a rule to make a failure go away. A failing check can be a
+real defect, and hiding it sweeps the defect under the rug.
+- **Fix it directly only if the defect is in the test code itself** (it doesn't compile, an unused
+  import, a wrong helper, a stub missing for a new dependency) **and** the fix doesn't change what is
+  verified. Say what you fixed.
+- **Otherwise stop and ask the user**, presenting:
+  - what the test verifies, and on what basis (code line, case or doc)
+  - the exact failure (expected vs actual, or the rule and message, with output)
+  - your analysis of why it fails
+  - the options
+- **Never do these without the user's decision:**
+  - change an expected value to the observed one
+  - weaken, remove or skip an assertion or case, or `@Disabled`
+  - suppress a rule (`@SuppressWarnings("PMD…")`, `// NOPMD`, `CHECKSTYLE:OFF`, ArchUnit freezing)
+  - edit `build/pmd`, `build/checkstyle` or the ArchUnit rules
+  - change production code just to turn a test green
+  - silence logs (log levels, removed appenders, swallowed exceptions)
+- **Green isn't the end of the check: read the logs too.** For backend runs, pass
+  `-Dmaven.test.redirectTestOutputToFile=true` and run
+  `java .claude/skills/it-gen/scripts/LogScan.java services/<svc>/target/failsafe-reports services/<svc>/target/container-logs`.
+  Container logs (Postgres, Kafka, Redis) are captured by Testcontainers' `Slf4jLogConsumer` into
+  `target/container-logs/<name>.log`. Report every ERROR, WARN or exception that no test deliberately
+  provokes, the same way as a failure.
+
+## HTTP 500 is never expected
+A 500 means a bug. Outages are 503 (dependency or database unreachable / timed out) and bad upstream
+answers are 502. Every outbound client uses `common.http.HttpClients.withTimeouts(...)` (explicit connect /
+read timeouts from a validated `*Properties` record, so a hung dependency becomes a 503, not a hung request)
+and translates failures with `common.http.Downstream`. `common.security.ApiErrorHandler` is the
+safety net. No code may produce a 500 on purpose and no test may expect one: PMD
+`build/pmd/no-internal-server-error.xml`, ArchUnit `neverProduceInternalServerError` and TestLint enforce
+it. A 500 seen at runtime (LogScan `unhandledHttp500: true`) is a product defect: report it, don't assert it.
 
 ## Integration-test workflow
 `/it-gen` generates, reviews and scores per-service ITs for **only the changed** services/endpoints

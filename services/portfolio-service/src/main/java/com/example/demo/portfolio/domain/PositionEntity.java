@@ -74,4 +74,14 @@ public class PositionEntity {
     public void setMarketPrice(Money marketPrice) {
         this.marketPrice = marketPrice;
     }
+
+    /** Unrealized P&L at the last mark; zero until the first price tick marks the position. */
+    public Money unrealizedPnl() {
+        return marketPrice == null ? Money.ZERO : marketPrice.subtract(avgPrice).multiply(quantity);
+    }
+
+    /** Value at the last mark, falling back to the average price for a position not yet marked. */
+    public Money marketValue() {
+        return (marketPrice == null ? avgPrice : marketPrice).multiply(quantity);
+    }
 }

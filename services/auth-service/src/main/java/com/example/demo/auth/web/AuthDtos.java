@@ -35,6 +35,13 @@ public final class AuthDtos {
             String password) {
     }
 
+    /** The authenticated caller's own profile ({@code GET /auth/me}); unlike the user list it includes the email. */
+    public record MeResponse(String id, String username, String email, String displayName) {
+        public static MeResponse from(UserEntity user) {
+            return new MeResponse(user.getId(), user.getUsername(), user.getEmail(), user.getDisplayName());
+        }
+    }
+
     public record UserResponse(String id, String username, String displayName) {
         public static UserResponse from(UserEntity user) {
             return new UserResponse(user.getId(), user.getUsername(), user.getDisplayName());

@@ -23,7 +23,9 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.stomp.StompSession;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -58,19 +60,23 @@ class OrderToPortfolioFlowIT {
 
     @Container
     @SuppressWarnings("resource")
-    static final PostgreSQLContainer PG_ORDER = new PostgreSQLContainer(POSTGRES);
+    static final PostgreSQLContainer PG_ORDER = new PostgreSQLContainer(POSTGRES)
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.postgres-order")));
 
     @Container
     @SuppressWarnings("resource")
-    static final PostgreSQLContainer PG_PORTFOLIO = new PostgreSQLContainer(POSTGRES);
+    static final PostgreSQLContainer PG_PORTFOLIO = new PostgreSQLContainer(POSTGRES)
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.postgres-portfolio")));
 
     @Container
     @SuppressWarnings("resource")
-    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer(CP_KAFKA);
+    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer(CP_KAFKA)
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.kafka")));
 
     @Container
     @SuppressWarnings("resource")
-    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
+    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379)
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.redis")));
 
     // Two WireMock servers: mixing a WS message stub and a REST stub on one server breaks the
     // plain REST call (the WS upgrade filter sits on /*), so REST routing and the WS feed are split.
@@ -183,6 +189,8 @@ class OrderToPortfolioFlowIT {
         props.put("market-data.base-url", "http://localhost:" + marketDataPort);
         // Deterministic regardless of wall-clock time: disable the working-hours gate for the flow test.
         props.put("trading.market-hours.enabled", "false");
+        // The flagship does not boot risk-service; the risk check has its own per-service tests.
+        props.put("risk.enabled", "false");
         return props;
     }
 

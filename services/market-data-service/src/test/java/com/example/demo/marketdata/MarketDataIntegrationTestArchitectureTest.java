@@ -6,12 +6,16 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import java.util.Set;
 import java.util.TreeSet;
 
+import org.springframework.http.HttpStatus;
+
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 /** Structure of the integration tests themselves (test classes only; it.harness is plumbing). */
 @AnalyzeClasses(packages = "com.example.demo.marketdata", importOptions = ImportOption.OnlyIncludeTests.class)
@@ -71,6 +75,14 @@ class MarketDataIntegrationTestArchitectureTest {
             .orShould().callMethodWhere(weakAssertion("Hamcrest", "org.hamcrest", WEAK_HAMCREST))
             .orShould().callMethodWhere(weakAssertion("WireMock", "com.github.tomakehurst.wiremock", WEAK_WIREMOCK))
             .because("tests are deterministic and assert exact values: no contains/range/presence-only assertions");
+
+    @ArchTest
+    static final ArchRule integrationTestsNeverExpectInternalServerError = noClasses()
+            .that().resideInAPackage("..it")
+            .should().accessField(HttpStatus.class, "INTERNAL_SERVER_ERROR")
+            .orShould().accessField(HttpServletResponse.class, "SC_INTERNAL_SERVER_ERROR")
+            .because("a 500 means a bug in the service: outage scenarios expect 503, bad upstream answers 502"
+                    + " (literal statusCode(500) is caught by PMD NoInternalServerError)");
 
     private static DescribedPredicate<JavaMethodCall> weakAssertion(String library, String packagePrefix,
                                                                     Set<String> names) {

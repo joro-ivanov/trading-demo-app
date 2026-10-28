@@ -27,6 +27,9 @@
         <module>services/market-data-service</module>
         <module>services/portfolio-service</module>
         <module>services/notification-service</module>
+        <module>services/alert-service</module>
+        <module>services/watchlist-service</module>
+        <module>services/risk-service</module>
         <module>integration-tests</module>
         <module>e2e-tests</module>
     </modules>
@@ -175,6 +178,29 @@
                         <goals>
                             <goal>check</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Testcontainers' container logs (target/container-logs/<name>.log, appended by logback-test.xml)
+                 are cleared once per run, right before the ITs, so a rerun without `clean` only shows its own. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>clear-container-logs</id>
+                        <phase>pre-integration-test</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.build.directory}/container-logs</directory>
+                                </fileset>
+                            </filesets>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

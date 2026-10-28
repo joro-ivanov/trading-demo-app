@@ -70,6 +70,7 @@
                     <rulesets>
                         <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/test-conventions.xml</ruleset>
                         <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/it-conventions.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-internal-server-error.xml</ruleset>
                     </rulesets>
                 </configuration>
             </plugin>

@@ -56,6 +56,7 @@ What is covered:
 - order placement and cancellation
 - market-hours validation
 - funds and holdings guards
+- pre-trade risk check (risk-service stubbed to allow by default; refusal 422 / outage 503 cases pending `/it-gen`)
 - persistence of orders and lifecycle states
 - outgoing exchange calls
 - reaction to fills and outcomes
@@ -63,7 +64,7 @@ What is covered:
 Primary test styles:
 
 - service-local unit tests
-- service integration tests with real DB and mocked exchange
+- service integration tests with real DB and Kafka; exchange, portfolio, market-data and risk mocked by WireMock
 - cross-service integration through `integration-tests`
 - API e2e coverage for trading/security/funds flows
 - UI e2e coverage through order-ticket and dashboard flows
@@ -110,6 +111,7 @@ What is covered:
 - authenticated WS connect
 - user-scoped fill delivery
 - public price topic delivery
+- triggered price alerts pushed to the owner (`alerts.triggered` → `/user/queue/alerts`; IT pending `/it-gen`)
 
 Primary test styles:
 
@@ -117,6 +119,13 @@ Primary test styles:
 - cross-service integration through `integration-tests`
 - API/WebSocket e2e coverage through live subscriptions
 - UI e2e coverage through live dashboard/fills behavior
+
+### `services/alert-service`, `services/watchlist-service`, `services/risk-service`
+
+New services (price alerts; watchlists; per-user risk limits + pre-trade check). Product code and
+the structural `*ArchitectureTest` exist; **integration tests are pending** the `/it-gen` run, which
+generates them with the same harness layout as the other services. Until then they are verified by
+a boot smoke test against Postgres (Flyway + `ddl-auto: validate`, 401 without / 200 with a JWT).
 
 ### `integration-tests`
 
@@ -236,6 +245,7 @@ in `it/harness/`:
 | market-data | `PriceIT` (2), `ExchangeFeedIT` (1), `OrderMatchingIT` (16) | 19 |
 | portfolio | `PortfolioIT` (1), `HoldingsIT` (2), `FillsIT` (2), `BalanceIT` (2), `DepositIT` (3), `WithdrawIT` (2), `FillsListenerIT` (9), `PriceTicksListenerIT` (8) | 29 |
 | notification | `StompHandshakeIT` (6), `PriceTickPushIT` (3), `FillPushIT` (1) | 10 |
+| alert, watchlist, risk | none yet (pending `/it-gen`) | 0 |
 
 New or changed endpoints are covered with `/it-gen` in Claude Code (`.claude/skills/it-gen/`), which
 only analyses the services/endpoints that changed.
@@ -325,6 +335,9 @@ What is enforced:
 - import/style hygiene with Checkstyle
 - frontend linting with ESLint
 - frontend dependency boundaries with dependency-cruiser
+- no weak / non-deterministic assertions and no internal mocking in ITs (ArchUnit `<Svc>IntegrationTestArchitectureTest`)
+- no HTTP 500 produced or expected (PMD `no-internal-server-error.xml`, ArchUnit `neverProduceInternalServerError`)
+- TestLint (fast regex pre-check) and LogScan (service, test and container logs of IT runs) in the `/it-gen` workflow
 
 ## What This Repository Is Showing
 

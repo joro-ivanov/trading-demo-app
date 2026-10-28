@@ -907,3 +907,21 @@ All other dependencies: **latest stable** at scaffold time, versions centralized
     - **Tests.** ITs 127→134, all assertions kept or tightened (exact parsed Kafka/STOMP payloads instead
       of `contains`, exact error bodies, no-fill proven by the resting event instead of a fixed wait).
       Each service green on 3 consecutive runs; full `mvn verify` of common + services green.
+26. 🚧 **M26 — Alerts, watchlists, risk limits + new endpoints (product code; ITs pending `/it-gen`):**
+    - **alert-service (8085):** `POST/GET/DELETE /alerts`, `GET /alerts/{id}` (owner-scoped, ≤ 20 active,
+      symbol validated against market-data: unknown → 422, unavailable → 503). Consumes `price.ticks`; an
+      ACTIVE alert fires once (ABOVE `>=` / BELOW `<=` threshold, `@Version` guards a double trigger) and
+      `alerts.triggered` is published **after commit**. notification-service pushes it to the owner over
+      WebSocket (`/user/queue/alerts`) — clients are notified without polling.
+    - **watchlist-service (8086):** per-user watchlists (≤ 10, ≤ 50 symbols); `GET /watchlists/{id}` prices
+      all symbols with one batch call and degrades to `pricesAvailable: false` when market-data is down.
+    - **risk-service (8087):** `GET/PUT /risk/limits` (defaults 100000 notional / 10000 position until
+      customised) and `POST /risk/check` (notional, then resulting |position| via portfolio). order-service
+      calls it after the existing guards — refusal → 422 with the reason, unreachable → 503 (fail closed);
+      `risk.enabled=false` in the flagship, which doesn't boot it.
+    - **New endpoints:** `GET /orders/{id}` (owner-scoped 404), `GET /prices?symbols=` (1–20, request order,
+      unknown omitted), `GET /portfolio/summary` (cash, market value, unrealized P&L, position count;
+      valuation moved onto `PositionEntity` and shared with `PositionResponse`), `GET /auth/me`.
+    - **Verified:** full reactor `install -DskipITs` green (PMD/Checkstyle/unit/ArchUnit); the new services
+      boot against Postgres (Flyway + `ddl-auto: validate`, 401 without / 200 with a JWT); existing ITs of
+      auth/market-data/portfolio/notification green. Existing order ITs need the risk stub (next `/it-gen`).

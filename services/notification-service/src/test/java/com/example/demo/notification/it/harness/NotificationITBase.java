@@ -2,10 +2,12 @@ package com.example.demo.notification.it.harness;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
 
 /**
@@ -20,7 +22,8 @@ public abstract class NotificationITBase {
     protected static final String SECRET = "demo-secret-demo-secret-demo-secret-1234";
 
     @SuppressWarnings("resource")
-    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0");
+    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0")
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.kafka")));
 
     static {
         KAFKA.start();

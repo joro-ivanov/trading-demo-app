@@ -6,6 +6,7 @@ import java.time.Duration;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -13,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.example.demo.common.security.Jwt;
@@ -34,7 +36,8 @@ public abstract class AuthITBase {
     protected static final String SECRET = "demo-secret-demo-secret-demo-secret-1234";
 
     @SuppressWarnings("resource")
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine")
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.postgres")));
 
     static {
         POSTGRES.start();

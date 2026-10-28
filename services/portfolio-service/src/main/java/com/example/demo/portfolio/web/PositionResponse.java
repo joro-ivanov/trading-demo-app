@@ -15,14 +15,11 @@ public record PositionResponse(
 
     public static PositionResponse from(PositionEntity position) {
         Money market = position.getMarketPrice();
-        Money pnl = market == null
-                ? Money.ZERO
-                : market.subtract(position.getAvgPrice()).multiply(position.getQuantity());
         return new PositionResponse(
                 position.getSymbol(),
                 position.getQuantity(),
                 position.getAvgPrice().amount(),
                 market == null ? null : market.amount(),
-                pnl.amount());
+                position.unrealizedPnl().amount());
     }
 }

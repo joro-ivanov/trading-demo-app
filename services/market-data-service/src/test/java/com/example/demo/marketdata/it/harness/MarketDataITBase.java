@@ -7,10 +7,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Duration;
 import java.time.Instant;
 
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
 
@@ -40,10 +42,12 @@ public abstract class MarketDataITBase {
     protected static final Instant NOW = Instant.parse("2024-06-12T18:00:00Z");
 
     @SuppressWarnings("resource")
-    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0");
+    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0")
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.kafka")));
 
     @SuppressWarnings("resource")
-    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
+    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379)
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.redis")));
 
     /** WS-only WireMock (REST and WS stubs must not share a server — cookbook §2). */
     static final WireMockServer EXCHANGE_FEED = new WireMockServer(options().dynamicPort());

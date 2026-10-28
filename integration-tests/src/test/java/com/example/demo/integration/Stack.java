@@ -45,6 +45,8 @@ import io.restassured.http.ContentType;
 final class Stack {
 
     private static final String JAVA_BIN = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+    /** Graceful shutdown budget per service process (Spring's default per-phase timeout is 30 s). */
+    private static final Duration SHUTDOWN_TIMEOUT = Duration.ofSeconds(30);
 
     private Stack() {
     }
@@ -152,8 +154,34 @@ final class Stack {
         return Json.read(frame, type);
     }
 
+    /**
+     * Stops the service processes and <b>waits for them to exit</b>, so each finishes its graceful
+     * shutdown (Kafka consumers/producers, Redis, DB pools) before the test stops the shared containers.
+     * Without the wait the containers disappeared mid-shutdown (DisconnectException / Redis reconnect noise).
+     * A process still alive after {@link #SHUTDOWN_TIMEOUT} is killed and reported as a failure.
+     */
     static void destroy(List<Process> processes) {
         processes.forEach(Process::destroy);
+        List<Long> killed = new ArrayList<>();
+        for (Process process : processes) {
+            if (!exitsWithin(process, SHUTDOWN_TIMEOUT)) {
+                process.destroyForcibly();
+                killed.add(process.pid());
+            }
+        }
+        if (!killed.isEmpty()) {
+            throw new IllegalStateException("Service processes did not stop within " + SHUTDOWN_TIMEOUT
+                    + " and were killed: " + killed);
+        }
+    }
+
+    private static boolean exitsWithin(Process process, Duration timeout) {
+        try {
+            return process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private static boolean tcpOpen(int port) {
