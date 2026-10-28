@@ -4,14 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
 
-import java.time.Duration;
-
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 
 import com.example.demo.common.json.Json;
 import com.example.demo.order.domain.OrderStatus;
+import com.example.demo.order.domain.Side;
 import com.example.demo.order.it.harness.ApiError;
 import com.example.demo.order.it.harness.OrderITBase;
+import com.example.demo.order.it.harness.OrderJson;
 import com.example.demo.order.it.harness.OrderMessages;
 import com.example.demo.order.web.OrderResponse;
 
@@ -19,75 +20,83 @@ import com.example.demo.order.web.OrderResponse;
 class CancelOrderIT extends OrderITBase {
 
     private static final String UNKNOWN_ID = "00000000-0000-0000-0000-000000000404";
+    private static final String SYMBOL = "AAPL";
+    private static final String QUANTITY = "1";
+    private static final String FILL_PRICE = "190.40";
+    /** Far below any market price, so the matcher rests the order (PENDING). */
+    private static final String NON_MARKETABLE_LIMIT = "0.01";
+    private static final String ORDER_NOT_FOUND = "Order not found: ";
+    private static final String FILLED_CANNOT_BE_CANCELLED = "Filled orders cannot be cancelled: ";
+
+    private static final String BUY_ORDER = OrderJson.market(SYMBOL, Side.BUY.name(), QUANTITY);
 
     @Test
     void cancelLiveOrderTransitionsToCancelled() {
-        String id = place(TESTER, "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1}").id();
+        String id = place(TESTER, BUY_ORDER).id();
 
-        String body = api(TESTER).delete("/orders/{id}", id)
-                .then().statusCode(200)
+        String body = api(TESTER).delete(ORDER_PATH, id)
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
         OrderResponse response = Json.read(body, OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.id()).isEqualTo(id);
-            softly.assertThat(response.status()).isEqualTo("CANCELLED");
+            softly.assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED.name());
             softly.assertThat(statusOf(id)).isEqualTo(OrderStatus.CANCELLED);
         });
     }
 
     @Test
     void cancelIsIdempotentOnAnAlreadyCancelledOrder() {
-        String id = place(TESTER, "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1}").id();
-        api(TESTER).delete("/orders/{id}", id).then().statusCode(200);
+        String id = place(TESTER, BUY_ORDER).id();
+        api(TESTER).delete(ORDER_PATH, id).then().statusCode(HttpStatus.OK.value());
 
-        String body = api(TESTER).delete("/orders/{id}", id)
-                .then().statusCode(200)
+        String body = api(TESTER).delete(ORDER_PATH, id)
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
         assertSoftly(softly -> {
-            softly.assertThat(Json.read(body, OrderResponse.class).status()).isEqualTo("CANCELLED");
+            softly.assertThat(Json.read(body, OrderResponse.class).status()).isEqualTo(OrderStatus.CANCELLED.name());
             softly.assertThat(statusOf(id)).isEqualTo(OrderStatus.CANCELLED);
         });
     }
 
     @Test
     void cancelUnknownOrderReturns404() {
-        String body = api(TESTER).delete("/orders/{id}", UNKNOWN_ID)
-                .then().statusCode(404)
+        String body = api(TESTER).delete(ORDER_PATH, UNKNOWN_ID)
+                .then().statusCode(HttpStatus.NOT_FOUND.value())
                 .extract().asString();
 
-        assertThat(Json.read(body, ApiError.class).message()).isEqualTo("Order not found: " + UNKNOWN_ID);
+        assertThat(Json.read(body, ApiError.class).message()).isEqualTo(ORDER_NOT_FOUND + UNKNOWN_ID);
     }
 
     // Bob cannot cancel Alice's order — 404 (same as unknown, so existence is not leaked); Alice still can.
     @Test
     void cannotCancelAnotherUsersOrder() {
-        String aliceOrderId = place(ALICE, "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1}").id();
+        String aliceOrderId = place(ALICE, BUY_ORDER).id();
 
-        api(BOB).delete("/orders/{id}", aliceOrderId).then().statusCode(404);
+        api(BOB).delete(ORDER_PATH, aliceOrderId).then().statusCode(HttpStatus.NOT_FOUND.value());
         assertThat(statusOf(aliceOrderId)).isEqualTo(OrderStatus.SUBMITTED);
 
-        String body = api(ALICE).delete("/orders/{id}", aliceOrderId)
-                .then().statusCode(200)
+        String body = api(ALICE).delete(ORDER_PATH, aliceOrderId)
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
-        assertThat(Json.read(body, OrderResponse.class).status()).isEqualTo("CANCELLED");
+        assertThat(Json.read(body, OrderResponse.class).status()).isEqualTo(OrderStatus.CANCELLED.name());
     }
 
     @Test
     void aPendingOrderCanBeCancelled() {
-        String id = place(TESTER, "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,"
-                + "\"type\":\"LIMIT\",\"limitPrice\":0.01}").id();
+        String id = place(TESTER, OrderJson.limit(SYMBOL, Side.BUY.name(), QUANTITY, NON_MARKETABLE_LIMIT)).id();
         KAFKA_PROBE.send(OrderMessages.RESTING, id, OrderMessages.resting(id));
-        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(statusOf(id)).isEqualTo(OrderStatus.PENDING));
 
-        String body = api(TESTER).delete("/orders/{id}", id)
-                .then().statusCode(200)
+        String body = api(TESTER).delete(ORDER_PATH, id)
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
         assertSoftly(softly -> {
-            softly.assertThat(Json.read(body, OrderResponse.class).status()).isEqualTo("CANCELLED");
+            softly.assertThat(Json.read(body, OrderResponse.class).status()).isEqualTo(OrderStatus.CANCELLED.name());
             softly.assertThat(statusOf(id)).isEqualTo(OrderStatus.CANCELLED);
         });
     }
@@ -95,18 +104,19 @@ class CancelOrderIT extends OrderITBase {
     // Filled orders are terminal: cancelling after execution must not rewrite history.
     @Test
     void cancellingAFilledOrderIsRejected() {
-        String id = place(TESTER, "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1}").id();
-        KAFKA_PROBE.send(OrderMessages.FILLS, id, OrderMessages.fill(id, "AAPL", "BUY", "1", "190.40", "tester"));
-        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+        String id = place(TESTER, BUY_ORDER).id();
+        KAFKA_PROBE.send(OrderMessages.FILLS, id,
+                OrderMessages.fill(id, SYMBOL, Side.BUY.name(), QUANTITY, FILL_PRICE, TESTER_NAME));
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(statusOf(id)).isEqualTo(OrderStatus.FILLED));
 
-        String body = api(TESTER).delete("/orders/{id}", id)
-                .then().statusCode(409)
+        String body = api(TESTER).delete(ORDER_PATH, id)
+                .then().statusCode(HttpStatus.CONFLICT.value())
                 .extract().asString();
 
         assertSoftly(softly -> {
             softly.assertThat(Json.read(body, ApiError.class).message())
-                    .isEqualTo("Filled orders cannot be cancelled: " + id);
+                    .isEqualTo(FILLED_CANNOT_BE_CANCELLED + id);
             softly.assertThat(statusOf(id)).isEqualTo(OrderStatus.FILLED);
         });
     }

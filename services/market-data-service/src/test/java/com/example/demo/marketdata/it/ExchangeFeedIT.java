@@ -1,5 +1,7 @@
 package com.example.demo.marketdata.it;
 
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.FEED_SYMBOL;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.SYMBOL_FIELD;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -20,16 +22,19 @@ import com.example.demo.marketdata.model.PriceTick;
  */
 class ExchangeFeedIT extends MarketDataITBase {
 
+    private static final Duration WAIT = Duration.ofSeconds(20);
+    /** The feed stub sends a burst of two AAPL frames on subscribe. */
+    private static final int FEED_FRAMES = 2;
+
     @Test
     void republishesEveryFeedFrameToPriceTicksInOrder() {
-        List<String> values = kafka().awaitValuesWhere(PriceTickPublisher.TOPIC, "symbol", "AAPL", 2,
-                Duration.ofSeconds(20));
+        List<String> values = kafka().awaitValuesWhere(PriceTickPublisher.TOPIC, SYMBOL_FIELD, FEED_SYMBOL, FEED_FRAMES, WAIT);
 
         List<PriceTick> ticks = values.stream().map(value -> Json.read(value, PriceTick.class)).toList();
         assertThat(ticks)
                 .extracting(PriceTick::symbol, tick -> tick.price().toPlainString())
                 .containsExactly(
-                        tuple("AAPL", ExchangeFeedStubs.AAPL_FIRST_PRICE),
-                        tuple("AAPL", ExchangeFeedStubs.AAPL_LAST_PRICE));
+                        tuple(FEED_SYMBOL, ExchangeFeedStubs.AAPL_FIRST_PRICE),
+                        tuple(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE));
     }
 }

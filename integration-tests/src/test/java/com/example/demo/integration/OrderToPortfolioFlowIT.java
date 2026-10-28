@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -56,7 +55,77 @@ class OrderToPortfolioFlowIT {
 
     private static final String CP_KAFKA = "confluentinc/cp-kafka:7.8.0";
     private static final String POSTGRES = "postgres:17-alpine";
+    private static final String REDIS_IMAGE = "redis:7-alpine";
+    private static final int REDIS_PORT = 6379;
     private static final Duration STARTUP = Duration.ofSeconds(90);
+    private static final Duration FLOW_TIMEOUT = Duration.ofSeconds(30);
+    private static final long FILL_FRAME_TIMEOUT_SECONDS = 20;
+
+    private static final String SUBJECT = "tester";
+    private static final String JWT_SECRET = "demo-secret-demo-secret-demo-secret-1234";
+    private static final long TOKEN_TTL_SECONDS = 3600;
+
+    private static final String LOCALHOST = "localhost";
+    private static final String HTTP_LOCALHOST = "http://" + LOCALHOST + ":";
+    private static final String WS_LOCALHOST = "ws://" + LOCALHOST + ":";
+
+    // The exchange (WireMock): REST order routing and the raw-WS price feed.
+    private static final String EXCHANGE_ORDERS_PATH = "/exchange/orders";
+    private static final String EXCHANGE_ACK = "{\"status\":\"ACCEPTED\",\"exchangeOrderId\":\"EX-1\"}";
+    private static final String EXCHANGE_FEED_PATH = "/exchange/marketdata";
+    private static final String FEED_STUB_NAME = "AAPL feed";
+    private static final String SYMBOL = "AAPL";
+    private static final String SUBSCRIBE_FRAME = "subscribe:" + SYMBOL;
+    private static final String FEED_PRICE = "190.40";
+    private static final String FEED_TICK = "{\"symbol\":\"" + SYMBOL + "\",\"price\":" + FEED_PRICE + "}";
+
+    // Service jars (system properties set by the pom) and their process logs.
+    private static final String MARKET_DATA_JAR = "marketdata.jar";
+    private static final String ORDER_JAR = "order.jar";
+    private static final String PORTFOLIO_JAR = "portfolio.jar";
+    private static final String NOTIFICATION_JAR = "notification.jar";
+    private static final String MARKET_DATA_LOG = "it-market-data.log";
+    private static final String ORDER_LOG = "it-order.log";
+    private static final String PORTFOLIO_LOG = "it-portfolio.log";
+    private static final String NOTIFICATION_LOG = "it-notification.log";
+
+    // HTTP / STOMP endpoints.
+    private static final String PRICE_PATH = "/prices/" + SYMBOL;
+    private static final String PORTFOLIO_PATH = "/portfolio";
+    private static final String DEPOSIT_PATH = "/funds/deposit";
+    private static final String ORDERS_PATH = "/orders";
+    private static final String ORDER_HISTORY_PATH = "/orders/history";
+    private static final String FILLS_QUEUE = "/user/queue/fills";
+
+    // The order under test and its expected outcome.
+    private static final String AMOUNT_FIELD = "amount";
+    private static final int DEPOSIT_AMOUNT = 100000;
+    private static final String SYMBOL_FIELD = "symbol";
+    private static final String SIDE_FIELD = "side";
+    private static final String QUANTITY_FIELD = "quantity";
+    private static final String BUY = "BUY";
+    private static final int ORDER_QUANTITY = 10;
+    private static final int OK = 200;
+    private static final int CREATED = 201;
+    private static final String SUBMITTED = "SUBMITTED";
+    private static final String FILLED = "FILLED";
+
+    // Spring properties passed to the service processes.
+    private static final String SERVER_PORT = "server.port";
+    private static final String KAFKA_BOOTSTRAP = "spring.kafka.bootstrap-servers";
+    private static final String DATASOURCE_URL = "spring.datasource.url";
+    private static final String DATASOURCE_USERNAME = "spring.datasource.username";
+    private static final String DATASOURCE_PASSWORD = "spring.datasource.password";
+    private static final String EXCHANGE_BASE_URL = "exchange.base-url";
+    private static final String PORTFOLIO_BASE_URL = "portfolio.base-url";
+    private static final String MARKET_DATA_BASE_URL = "market-data.base-url";
+    private static final String MARKET_HOURS_ENABLED = "trading.market-hours.enabled";
+    private static final String RISK_ENABLED = "risk.enabled";
+    private static final String DISABLED = "false";
+    private static final String REDIS_HOST = "spring.data.redis.host";
+    private static final String REDIS_PORT_PROPERTY = "spring.data.redis.port";
+    private static final String EXCHANGE_WS_URL = "exchange.ws-url";
+    private static final String MARKET_DATA_SYMBOLS = "market-data.symbols";
 
     @Container
     @SuppressWarnings("resource")
@@ -75,7 +144,7 @@ class OrderToPortfolioFlowIT {
 
     @Container
     @SuppressWarnings("resource")
-    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379)
+    static final GenericContainer<?> REDIS = new GenericContainer<>(REDIS_IMAGE).withExposedPorts(REDIS_PORT)
             .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.redis")));
 
     // Two WireMock servers: mixing a WS message stub and a REST stub on one server breaks the
@@ -84,8 +153,7 @@ class OrderToPortfolioFlowIT {
     static final WireMockServer EXCHANGE_WS = new WireMockServer(options().dynamicPort());
 
     static final List<Process> PROCESSES = new ArrayList<>();
-    static final String TOKEN = com.example.demo.common.security.Jwt.issue(
-            "tester", "demo-secret-demo-secret-demo-secret-1234", 3600);
+    static final String TOKEN = com.example.demo.common.security.Jwt.issue(SUBJECT, JWT_SECRET, TOKEN_TTL_SECONDS);
 
     static int orderPort;
     static int portfolioPort;
@@ -96,13 +164,12 @@ class OrderToPortfolioFlowIT {
     static void startStack() {
         EXCHANGE_REST.start();
         EXCHANGE_WS.start();
-        EXCHANGE_REST.stubFor(post("/exchange/orders")
-                .willReturn(okJson("{\"status\":\"ACCEPTED\",\"exchangeOrderId\":\"EX-1\"}")));
-        configureFor("localhost", EXCHANGE_WS.port());
+        EXCHANGE_REST.stubFor(post(EXCHANGE_ORDERS_PATH).willReturn(okJson(EXCHANGE_ACK)));
+        configureFor(LOCALHOST, EXCHANGE_WS.port());
         messageStubFor(message()
-                .withName("AAPL feed")
-                .withBody(WireMock.equalTo("subscribe:AAPL"))
-                .willTriggerActions(sendMessage("{\"symbol\":\"AAPL\",\"price\":190.40}").onOriginatingChannel()));
+                .withName(FEED_STUB_NAME)
+                .withBody(WireMock.equalTo(SUBSCRIBE_FRAME))
+                .willTriggerActions(sendMessage(FEED_TICK).onOriginatingChannel()));
 
         String kafka = KAFKA.getBootstrapServers();
         orderPort = Stack.freePort();
@@ -110,18 +177,18 @@ class OrderToPortfolioFlowIT {
         notificationPort = Stack.freePort();
         marketDataPort = Stack.freePort();
 
-        PROCESSES.add(Stack.launch(jar("marketdata.jar"), "it-market-data.log", marketDataProps(kafka, marketDataPort)));
-        PROCESSES.add(Stack.launch(jar("order.jar"), "it-order.log", orderProps(kafka, orderPort)));
-        PROCESSES.add(Stack.launch(jar("portfolio.jar"), "it-portfolio.log", portfolioProps(kafka, portfolioPort)));
-        PROCESSES.add(Stack.launch(jar("notification.jar"), "it-notification.log", notificationProps(kafka, notificationPort)));
+        PROCESSES.add(Stack.launch(jar(MARKET_DATA_JAR), MARKET_DATA_LOG, marketDataProps(kafka, marketDataPort)));
+        PROCESSES.add(Stack.launch(jar(ORDER_JAR), ORDER_LOG, orderProps(kafka, orderPort)));
+        PROCESSES.add(Stack.launch(jar(PORTFOLIO_JAR), PORTFOLIO_LOG, portfolioProps(kafka, portfolioPort)));
+        PROCESSES.add(Stack.launch(jar(NOTIFICATION_JAR), NOTIFICATION_LOG, notificationProps(kafka, notificationPort)));
 
         Stack.awaitListening(orderPort, STARTUP);
         Stack.awaitListening(notificationPort, STARTUP);
         // market-data is ready only once it has consumed the WS feed and cached the price.
-        Stack.awaitHttpOk(marketDataPort, "/prices/AAPL", TOKEN, STARTUP);
+        Stack.awaitHttpOk(marketDataPort, PRICE_PATH, TOKEN, STARTUP);
         // Wait for an *authenticated* 200 (not just an open port) so the security filter chain /
         // JWT decoder are fully ready before the test asserts — avoids a transient 403 under load.
-        Stack.awaitHttpOk(portfolioPort, "/portfolio", TOKEN, STARTUP);
+        Stack.awaitHttpOk(portfolioPort, PORTFOLIO_PATH, TOKEN, STARTUP);
     }
 
     @AfterAll
@@ -134,37 +201,37 @@ class OrderToPortfolioFlowIT {
     @Test
     void orderFlowsThroughToPortfolioAndStompClient() throws Exception {
         BlockingQueue<String> fills = new LinkedBlockingQueue<>();
-        StompSession session = Stack.subscribe(notificationPort, "/user/queue/fills", TOKEN, fills);
+        StompSession session = Stack.subscribe(notificationPort, FILLS_QUEUE, TOKEN, fills);
 
         // tester has no seeded cash — fund the account so the BUY passes the pre-trade funds guard.
-        Stack.post(portfolioPort, TOKEN, "/funds/deposit", Map.of("amount", 100000), 200);
+        Stack.post(portfolioPort, TOKEN, DEPOSIT_PATH, Map.of(AMOUNT_FIELD, DEPOSIT_AMOUNT), OK);
 
-        OrderResponse order = Stack.post(orderPort, TOKEN, "/orders",
-                Map.of("symbol", "AAPL", "side", "BUY", "quantity", 10), 201, OrderResponse.class);
-        assertThat(order.status()).isEqualTo("SUBMITTED");
+        OrderResponse order = Stack.post(orderPort, TOKEN, ORDERS_PATH,
+                Map.of(SYMBOL_FIELD, SYMBOL, SIDE_FIELD, BUY, QUANTITY_FIELD, ORDER_QUANTITY), CREATED,
+                OrderResponse.class);
+        assertThat(order.status()).isEqualTo(SUBMITTED);
 
-        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
-            assertThat(Stack.getList(portfolioPort, TOKEN, "/portfolio", PositionResponse.class))
-                    .filteredOn(position -> position.symbol().equals("AAPL"))
+        await().atMost(FLOW_TIMEOUT).untilAsserted(() -> {
+            assertThat(Stack.getList(portfolioPort, TOKEN, PORTFOLIO_PATH, PositionResponse.class))
+                    .filteredOn(position -> position.symbol().equals(SYMBOL))
                     .singleElement()
-                    .satisfies(position -> assertThat(position.avgPrice()).isEqualByComparingTo("190.40"));
+                    .satisfies(position -> assertThat(position.avgPrice()).isEqualByComparingTo(FEED_PRICE));
         });
 
         // The order is resolved to FILLED in order-service's own DB (it consumes the fill back).
-        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
-            assertThat(Stack.getList(orderPort, TOKEN, "/orders/history", OrderResponse.class))
+        await().atMost(FLOW_TIMEOUT).untilAsserted(() -> {
+            assertThat(Stack.getList(orderPort, TOKEN, ORDER_HISTORY_PATH, OrderResponse.class))
                     .filteredOn(response -> response.id().equals(order.id()))
                     .singleElement()
-                    .satisfies(response -> assertThat(response.status()).isEqualTo("FILLED"));
+                    .satisfies(response -> assertThat(response.status()).isEqualTo(FILLED));
         });
 
-        String fill = fills.poll(20, TimeUnit.SECONDS);
+        String fill = Stack.nextFrame(fills, FILL_FRAME_TIMEOUT_SECONDS);
         session.disconnect();
-        assertThat(fill).isNotNull();
         FillResponse fillResponse = Stack.frameAs(fill, FillResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(fillResponse.symbol()).isEqualTo("AAPL");
-            softly.assertThat(fillResponse.price()).isEqualByComparingTo("190.40");
+            softly.assertThat(fillResponse.symbol()).isEqualTo(SYMBOL);
+            softly.assertThat(fillResponse.price()).isEqualByComparingTo(FEED_PRICE);
         });
     }
 
@@ -174,40 +241,40 @@ class OrderToPortfolioFlowIT {
 
     private static Map<String, String> base(String kafka, int port) {
         Map<String, String> props = new HashMap<>();
-        props.put("server.port", Integer.toString(port));
-        props.put("spring.kafka.bootstrap-servers", kafka);
+        props.put(SERVER_PORT, Integer.toString(port));
+        props.put(KAFKA_BOOTSTRAP, kafka);
         return props;
     }
 
     private static Map<String, String> orderProps(String kafka, int port) {
         Map<String, String> props = base(kafka, port);
-        props.put("spring.datasource.url", PG_ORDER.getJdbcUrl());
-        props.put("spring.datasource.username", PG_ORDER.getUsername());
-        props.put("spring.datasource.password", PG_ORDER.getPassword());
-        props.put("exchange.base-url", EXCHANGE_REST.baseUrl());
-        props.put("portfolio.base-url", "http://localhost:" + portfolioPort);
-        props.put("market-data.base-url", "http://localhost:" + marketDataPort);
+        props.put(DATASOURCE_URL, PG_ORDER.getJdbcUrl());
+        props.put(DATASOURCE_USERNAME, PG_ORDER.getUsername());
+        props.put(DATASOURCE_PASSWORD, PG_ORDER.getPassword());
+        props.put(EXCHANGE_BASE_URL, EXCHANGE_REST.baseUrl());
+        props.put(PORTFOLIO_BASE_URL, HTTP_LOCALHOST + portfolioPort);
+        props.put(MARKET_DATA_BASE_URL, HTTP_LOCALHOST + marketDataPort);
         // Deterministic regardless of wall-clock time: disable the working-hours gate for the flow test.
-        props.put("trading.market-hours.enabled", "false");
+        props.put(MARKET_HOURS_ENABLED, DISABLED);
         // The flagship does not boot risk-service; the risk check has its own per-service tests.
-        props.put("risk.enabled", "false");
+        props.put(RISK_ENABLED, DISABLED);
         return props;
     }
 
     private static Map<String, String> marketDataProps(String kafka, int port) {
         Map<String, String> props = base(kafka, port);
-        props.put("spring.data.redis.host", REDIS.getHost());
-        props.put("spring.data.redis.port", Integer.toString(REDIS.getMappedPort(6379)));
-        props.put("exchange.ws-url", "ws://localhost:" + EXCHANGE_WS.port() + "/exchange/marketdata");
-        props.put("market-data.symbols", "AAPL");
+        props.put(REDIS_HOST, REDIS.getHost());
+        props.put(REDIS_PORT_PROPERTY, Integer.toString(REDIS.getMappedPort(REDIS_PORT)));
+        props.put(EXCHANGE_WS_URL, WS_LOCALHOST + EXCHANGE_WS.port() + EXCHANGE_FEED_PATH);
+        props.put(MARKET_DATA_SYMBOLS, SYMBOL);
         return props;
     }
 
     private static Map<String, String> portfolioProps(String kafka, int port) {
         Map<String, String> props = base(kafka, port);
-        props.put("spring.datasource.url", PG_PORTFOLIO.getJdbcUrl());
-        props.put("spring.datasource.username", PG_PORTFOLIO.getUsername());
-        props.put("spring.datasource.password", PG_PORTFOLIO.getPassword());
+        props.put(DATASOURCE_URL, PG_PORTFOLIO.getJdbcUrl());
+        props.put(DATASOURCE_USERNAME, PG_PORTFOLIO.getUsername());
+        props.put(DATASOURCE_PASSWORD, PG_PORTFOLIO.getPassword());
         return props;
     }
 

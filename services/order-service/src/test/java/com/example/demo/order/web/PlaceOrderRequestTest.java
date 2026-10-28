@@ -13,8 +13,10 @@ import com.example.demo.order.domain.Side;
 /** Pure unit coverage of the request's defaulting + cross-field rules (no Spring context). */
 class PlaceOrderRequestTest {
 
+    private static final String SYMBOL = "AAPL";
+
     private static PlaceOrderRequest req(OrderType type, BigDecimal limit, BigDecimal stop) {
-        return new PlaceOrderRequest("AAPL", Side.BUY, BigDecimal.ONE, type, limit, stop);
+        return new PlaceOrderRequest(SYMBOL, Side.BUY, BigDecimal.ONE, type, limit, stop);
     }
 
     @Test

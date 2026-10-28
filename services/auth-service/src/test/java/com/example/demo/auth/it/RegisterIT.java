@@ -1,10 +1,18 @@
 package com.example.demo.auth.it;
 
+import static com.example.demo.auth.it.harness.AuthFixtures.ALICE;
+import static com.example.demo.auth.it.harness.AuthFixtures.LOGIN;
+import static com.example.demo.auth.it.harness.AuthFixtures.REGISTER;
+import static com.example.demo.auth.it.harness.AuthFixtures.TOKEN_TTL_SECONDS;
+import static com.example.demo.auth.it.harness.AuthFixtures.emailOf;
+import static com.example.demo.auth.it.harness.AuthFixtures.loginBody;
+import static com.example.demo.auth.it.harness.AuthFixtures.registerBody;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpStatus;
 
 import com.example.demo.auth.it.harness.AuthITBase;
 import com.example.demo.auth.web.AuthDtos.LoginResponse;
@@ -13,74 +21,85 @@ import com.example.demo.common.json.Json;
 /** {@code POST /auth/register} (public). Each test registers its own distinct username/email. */
 class RegisterIT extends AuthITBase {
 
+    private static final String VALID_PASSWORD = "s3cret-pw";
+
+    private static final String NEW_USER = "carol";
+    private static final String RETURNING_USER = "dave";
+    private static final String DUPLICATE_USERNAME = "erin";
+    private static final String SECOND_EMAIL_FOR_DUPLICATE_USERNAME = "erin2";
+    private static final String FIRST_OWNER_OF_SHARED_EMAIL = "frank";
+    private static final String SECOND_OWNER_OF_SHARED_EMAIL = "grace";
+    private static final String SHARED_EMAIL = "shared";
+    private static final String NEW_EMAIL_FOR_SEEDED_USERNAME = "alice.new";
+
     @Test
     void registerCreatesUserAndReturnsToken() {
         String body = api()
-                .body("{\"username\":\"carol\",\"email\":\"carol@demo.example.com\",\"password\":\"s3cret-pw\"}")
-                .post("/auth/register")
-                .then().statusCode(201)
+                .body(registerBody(NEW_USER, emailOf(NEW_USER), VALID_PASSWORD))
+                .post(REGISTER)
+                .then().statusCode(HttpStatus.CREATED.value())
                 .extract().asString();
 
         LoginResponse response = Json.read(body, LoginResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.username()).isEqualTo("carol");
-            softly.assertThat(claimsOf(response.token())).isEqualTo(new TokenClaims("carol", 3600));
+            softly.assertThat(response.username()).isEqualTo(NEW_USER);
+            softly.assertThat(claimsOf(response.token())).isEqualTo(new TokenClaims(NEW_USER, TOKEN_TTL_SECONDS));
         });
     }
 
     @Test
     void registeredUserCanThenLogIn() {
         api()
-                .body("{\"username\":\"dave\",\"email\":\"dave@demo.example.com\",\"password\":\"s3cret-pw\"}")
-                .post("/auth/register")
-                .then().statusCode(201);
+                .body(registerBody(RETURNING_USER, emailOf(RETURNING_USER), VALID_PASSWORD))
+                .post(REGISTER)
+                .then().statusCode(HttpStatus.CREATED.value());
 
         String body = api()
-                .body("{\"username\":\"dave\",\"password\":\"s3cret-pw\"}")
-                .post("/auth/login")
-                .then().statusCode(200)
+                .body(loginBody(RETURNING_USER, VALID_PASSWORD))
+                .post(LOGIN)
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
         LoginResponse response = Json.read(body, LoginResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.username()).isEqualTo("dave");
-            softly.assertThat(claimsOf(response.token())).isEqualTo(new TokenClaims("dave", 3600));
+            softly.assertThat(response.username()).isEqualTo(RETURNING_USER);
+            softly.assertThat(claimsOf(response.token())).isEqualTo(new TokenClaims(RETURNING_USER, TOKEN_TTL_SECONDS));
         });
     }
 
     @Test
     void duplicateUsernameIsConflict() {
         api()
-                .body("{\"username\":\"erin\",\"email\":\"erin@demo.example.com\",\"password\":\"s3cret-pw\"}")
-                .post("/auth/register")
-                .then().statusCode(201);
+                .body(registerBody(DUPLICATE_USERNAME, emailOf(DUPLICATE_USERNAME), VALID_PASSWORD))
+                .post(REGISTER)
+                .then().statusCode(HttpStatus.CREATED.value());
 
         api()
-                .body("{\"username\":\"erin\",\"email\":\"erin2@demo.example.com\",\"password\":\"s3cret-pw\"}")
-                .post("/auth/register")
-                .then().statusCode(409);
+                .body(registerBody(DUPLICATE_USERNAME, emailOf(SECOND_EMAIL_FOR_DUPLICATE_USERNAME), VALID_PASSWORD))
+                .post(REGISTER)
+                .then().statusCode(HttpStatus.CONFLICT.value());
     }
 
     @Test
     void duplicateEmailIsConflict() {
         api()
-                .body("{\"username\":\"frank\",\"email\":\"shared@demo.example.com\",\"password\":\"s3cret-pw\"}")
-                .post("/auth/register")
-                .then().statusCode(201);
+                .body(registerBody(FIRST_OWNER_OF_SHARED_EMAIL, emailOf(SHARED_EMAIL), VALID_PASSWORD))
+                .post(REGISTER)
+                .then().statusCode(HttpStatus.CREATED.value());
 
         api()
-                .body("{\"username\":\"grace\",\"email\":\"shared@demo.example.com\",\"password\":\"s3cret-pw\"}")
-                .post("/auth/register")
-                .then().statusCode(409);
+                .body(registerBody(SECOND_OWNER_OF_SHARED_EMAIL, emailOf(SHARED_EMAIL), VALID_PASSWORD))
+                .post(REGISTER)
+                .then().statusCode(HttpStatus.CONFLICT.value());
     }
 
     // Registering an already-seeded username (alice) is a conflict — proves the Flyway seed is live.
     @Test
     void registeringSeededUsernameIsConflict() {
         api()
-                .body("{\"username\":\"alice\",\"email\":\"alice.new@demo.example.com\",\"password\":\"s3cret-pw\"}")
-                .post("/auth/register")
-                .then().statusCode(409);
+                .body(registerBody(ALICE.username(), emailOf(NEW_EMAIL_FOR_SEEDED_USERNAME), VALID_PASSWORD))
+                .post(REGISTER)
+                .then().statusCode(HttpStatus.CONFLICT.value());
     }
 
     // EP/BVA invalid partitions: blank/short/too-long/bad-pattern username, bad/blank email, short/blank
@@ -100,7 +119,7 @@ class RegisterIT extends AuthITBase {
     void rejectsInvalidRegistrationWith400(String body) {
         api()
                 .body(body)
-                .post("/auth/register")
-                .then().statusCode(400);
+                .post(REGISTER)
+                .then().statusCode(HttpStatus.BAD_REQUEST.value());
     }
 }

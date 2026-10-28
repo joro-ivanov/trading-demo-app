@@ -393,9 +393,9 @@ catches what the others cannot:
 | Check | Looks at | Catches | Runs in |
 |---|---|---|---|
 | **Checkstyle** | source form | star / unused / redundant imports, one top-level class per file | `mvn verify` (fails the build) |
-| **PMD** | syntax tree | logic in tests: control statements everywhere; also `&&` `\|\|` `!` `==` `!=` and `forEach`/`filter`/`ifPresent` callbacks in the service modules | `mvn verify` (fails the build) |
+| **PMD** | syntax tree | logic in tests: control statements everywhere; also `&&` `\|\|` `!` `==` `!=` and `forEach`/`filter`/`ifPresent` callbacks in the service modules; magic values (unnamed strings/numbers) in every test; producing or expecting HTTP 500 in the backend | `mvn verify` (fails the build) |
 | **ArchUnit** | compiled classes and calls | layering, no field injection or `java.util.Date`; in ITs no Mockito, `*IT` in the `it` package, no weak assertions | `mvn test` (unit tests, fails the build) |
-| **TestLint** | source text (regex) | a fast approximation of the PMD and ArchUnit test rules | `/it-gen` gate and on demand |
+| **TestLint** | source text (regex) | a fast approximation of the PMD and ArchUnit test rules, incl. magic values | `/it-gen` gate and on demand |
 
 - **Checkstyle** (`build/checkstyle/checkstyle.xml`) is a style checker. Here it only enforces import
   hygiene and one top-level class per file: cheap consistency that catches leftovers such as an
@@ -406,13 +406,22 @@ catches what the others cannot:
   operators and callback loops. Production code and `harness/` helper packages are exempt. The goal is
   linear tests (setup → action → assert): one scenario per test, and `@ParameterizedTest` wherever
   cases differ only in data.
+  `build/pmd/no-magic-values.xml` (every module, e2e included) bans **magic values** in tests: every
+  string and number a test uses must be named. That means a constant, a local variable, or an
+  annotation data table such as `@CsvSource`. `0`, `1`, `""` and description prose (`Allure.step`,
+  assertion descriptions, `AssertionError` messages) are allowed inline. ArchUnit can't enforce this,
+  because the compiler inlines constants into the bytecode.
 - **ArchUnit** loads the compiled bytecode and checks dependencies and method calls as JUnit tests.
   It sees what source parsing can't: which class owns a called method, annotations on fields, and
   calls inside lambdas.
   - `<Svc>ArchitectureTest` covers production layering.
   - `<Svc>IntegrationTestArchitectureTest` forbids internal mocking in ITs (only external
-    communication is stubbed, with WireMock). It also forbids weak or non-deterministic assertions:
-    AssertJ `contains`/`isNotNull`/`isGreaterThan`…, Hamcrest `containsString`…, WireMock `containing`….
+    communication is stubbed, with WireMock), keeps `*IT` in the `it` package and forbids expecting a 500.
+  - `<Module>TestAssertionsArchitectureTest`, generated from one template into every backend module
+    (the services, common, integration-tests and wiremock-ws-spike), forbids weak or non-deterministic
+    assertions in *all* their tests: unit, ArchUnit and ITs. The banned calls are AssertJ
+    `contains`/`isNotNull`/`isGreaterThan`…, Hamcrest `containsString`… and WireMock `containing`….
+    e2e is excluded because it asserts live values on a running stack.
   - The e2e module has its own framework invariants: engine isolation, records, static service
     methods, explicit `Page` constructors.
 - **TestLint** (`.claude/skills/it-gen/scripts/TestLint.java`) is a dependency-free, single-file Java

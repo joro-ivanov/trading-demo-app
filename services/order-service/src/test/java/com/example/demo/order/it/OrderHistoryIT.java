@@ -10,21 +10,34 @@ import java.util.List;
 
 import org.assertj.core.api.recursive.comparison.RecursiveComparisonConfiguration;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 
 import com.example.demo.common.json.Json;
+import com.example.demo.order.domain.Side;
 import com.example.demo.order.it.harness.OrderITBase;
+import com.example.demo.order.it.harness.OrderJson;
 import com.example.demo.order.web.OrderResponse;
 
 /** {@code GET /orders/history}: the caller's own orders only. */
 class OrderHistoryIT extends OrderITBase {
 
+    private static final String SINGLE_OWNER = "history-single";
+    private static final String ALICE_OWNER = "history-alice";
+    private static final String BOB_OWNER = "history-bob";
+    private static final String ALICE_SYMBOL = "NFLX";
+    private static final String BOB_SYMBOL = "AMZN";
+    // The single-order history test uses 2, so the response scale (2) differs from the DB scale (2.0000).
+    private static final String SINGLE_QUANTITY = "2";
+    private static final String ALICE_QUANTITY = "1";
+    private static final String BOB_QUANTITY = "3";
+
     @Test
     void orderHistoryIncludesAPlacedOrder() {
-        String token = tokenFor("history-single");
-        OrderResponse placed = place(token, "{\"symbol\":\"NFLX\",\"side\":\"BUY\",\"quantity\":2}");
+        String token = tokenFor(SINGLE_OWNER);
+        OrderResponse placed = place(token, OrderJson.market(ALICE_SYMBOL, Side.BUY.name(), SINGLE_QUANTITY));
 
-        String body = api(token).get("/orders/history")
-                .then().statusCode(200)
+        String body = api(token).get(HISTORY_PATH)
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
         // Compare amounts by value: POST echoes the request scale (2), history returns the DB scale (2.0000).
@@ -37,21 +50,21 @@ class OrderHistoryIT extends OrderITBase {
 
     @Test
     void orderHistoryIsScopedToTheAuthenticatedUser() {
-        String alice = tokenFor("history-alice");
-        String bob = tokenFor("history-bob");
-        OrderResponse aliceOrder = place(alice, "{\"symbol\":\"NFLX\",\"side\":\"BUY\",\"quantity\":1}");
-        OrderResponse bobOrder = place(bob, "{\"symbol\":\"AMZN\",\"side\":\"BUY\",\"quantity\":3}");
+        String alice = tokenFor(ALICE_OWNER);
+        String bob = tokenFor(BOB_OWNER);
+        OrderResponse aliceOrder = place(alice, OrderJson.market(ALICE_SYMBOL, Side.BUY.name(), ALICE_QUANTITY));
+        OrderResponse bobOrder = place(bob, OrderJson.market(BOB_SYMBOL, Side.BUY.name(), BOB_QUANTITY));
 
         List<OrderResponse> aliceHistory = Json.readList(
-                api(alice).get("/orders/history").then().statusCode(200).extract().asString(), OrderResponse.class);
+                api(alice).get(HISTORY_PATH).then().statusCode(HttpStatus.OK.value()).extract().asString(), OrderResponse.class);
         List<OrderResponse> bobHistory = Json.readList(
-                api(bob).get("/orders/history").then().statusCode(200).extract().asString(), OrderResponse.class);
+                api(bob).get(HISTORY_PATH).then().statusCode(HttpStatus.OK.value()).extract().asString(), OrderResponse.class);
 
         assertSoftly(softly -> {
             softly.assertThat(aliceHistory).extracting(OrderResponse::id, OrderResponse::owner)
-                    .containsExactly(tuple(aliceOrder.id(), "history-alice"));
+                    .containsExactly(tuple(aliceOrder.id(), ALICE_OWNER));
             softly.assertThat(bobHistory).extracting(OrderResponse::id, OrderResponse::owner)
-                    .containsExactly(tuple(bobOrder.id(), "history-bob"));
+                    .containsExactly(tuple(bobOrder.id(), BOB_OWNER));
         });
     }
 }

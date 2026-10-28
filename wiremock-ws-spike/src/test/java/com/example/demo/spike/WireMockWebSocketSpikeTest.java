@@ -36,13 +36,35 @@ import com.github.tomakehurst.wiremock.WireMockServer;
  */
 class WireMockWebSocketSpikeTest {
 
+    private static final String HOST = "localhost";
+    private static final String WS_ORIGIN_PREFIX = "ws://" + HOST + ":";
+    private static final String EXCHANGE_PATH = "/exchange";
+    private static final String MARKET_DATA_PATH = "/exchange/marketdata";
+    private static final long FRAME_TIMEOUT_SECONDS = 5;
+    private static final long SILENCE_WINDOW_SECONDS = 2;
+    private static final long CONNECT_TIMEOUT_SECONDS = 5;
+
+    private static final String ECHO_STUB = "echo";
+    private static final String GREETING = "hello";
+    private static final String ECHO_REPLY = "world";
+
+    private static final String PRICE_FEED_STUB = "price-feed";
+    private static final String MALFORMED_FEED_STUB = "malformed feed";
+    private static final String KNOWN_FEED_STUB = "known feed";
+    private static final String SUBSCRIBE_AAPL = "subscribe:AAPL";
+    private static final String SUBSCRIBE_UNKNOWN = "subscribe:UNKNOWN";
+    private static final String FIRST_TICK = "{\"symbol\":\"AAPL\",\"price\":190.10}";
+    private static final String SECOND_TICK = "{\"symbol\":\"AAPL\",\"price\":190.40}";
+    private static final String MALFORMED_FRAME = "}{not-json";
+    private static final String ANY_PRICE_FRAME = "price";
+
     private static WireMockServer wireMock;
 
     @BeforeAll
     static void startServer() {
         wireMock = new WireMockServer(options().dynamicPort());
         wireMock.start();
-        configureFor("localhost", wireMock.port());
+        configureFor(HOST, wireMock.port());
     }
 
     @AfterAll
@@ -58,70 +80,70 @@ class WireMockWebSocketSpikeTest {
     @Test
     void echoesInboundFrameBackToClient() throws Exception {
         messageStubFor(message()
-                .withName("echo")
-                .withBody(equalTo("hello"))
-                .willTriggerActions(sendMessage("world").onOriginatingChannel()));
+                .withName(ECHO_STUB)
+                .withBody(equalTo(GREETING))
+                .willTriggerActions(sendMessage(ECHO_REPLY).onOriginatingChannel()));
 
-        CapturingClient client = connect("/exchange");
-        client.send("hello");
-        String reply = client.frames.poll(5, TimeUnit.SECONDS);
+        CapturingClient client = connect(EXCHANGE_PATH);
+        client.send(GREETING);
+        String reply = client.frames.poll(FRAME_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         client.closeBlocking();
 
-        assertThat(reply).isEqualTo("world");
+        assertThat(reply).isEqualTo(ECHO_REPLY);
     }
 
     @Test
     void streamsPriceBurstOnSubscribe() throws Exception {
         messageStubFor(message()
-                .withName("price-feed")
-                .withBody(equalTo("subscribe:AAPL"))
+                .withName(PRICE_FEED_STUB)
+                .withBody(equalTo(SUBSCRIBE_AAPL))
                 .willTriggerActions(
-                        sendMessage("{\"symbol\":\"AAPL\",\"price\":190.10}").onOriginatingChannel(),
-                        sendMessage("{\"symbol\":\"AAPL\",\"price\":190.40}").onOriginatingChannel()));
+                        sendMessage(FIRST_TICK).onOriginatingChannel(),
+                        sendMessage(SECOND_TICK).onOriginatingChannel()));
 
-        CapturingClient client = connect("/exchange/marketdata");
-        client.send("subscribe:AAPL");
-        String first = client.frames.poll(5, TimeUnit.SECONDS);
-        String second = client.frames.poll(5, TimeUnit.SECONDS);
+        CapturingClient client = connect(MARKET_DATA_PATH);
+        client.send(SUBSCRIBE_AAPL);
+        String first = client.frames.poll(FRAME_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        String second = client.frames.poll(FRAME_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         client.closeBlocking();
 
-        assertThat(first).isEqualTo("{\"symbol\":\"AAPL\",\"price\":190.10}");
-        assertThat(second).isEqualTo("{\"symbol\":\"AAPL\",\"price\":190.40}");
+        assertThat(first).isEqualTo(FIRST_TICK);
+        assertThat(second).isEqualTo(SECOND_TICK);
     }
 
     @Test
     void injectsAMalformedFrameForResilienceTesting() throws Exception {
         messageStubFor(message()
-                .withName("malformed feed")
-                .withBody(equalTo("subscribe:AAPL"))
-                .willTriggerActions(sendMessage("}{not-json").onOriginatingChannel()));
+                .withName(MALFORMED_FEED_STUB)
+                .withBody(equalTo(SUBSCRIBE_AAPL))
+                .willTriggerActions(sendMessage(MALFORMED_FRAME).onOriginatingChannel()));
 
-        CapturingClient client = connect("/exchange");
-        client.send("subscribe:AAPL");
-        String reply = client.frames.poll(5, TimeUnit.SECONDS);
+        CapturingClient client = connect(EXCHANGE_PATH);
+        client.send(SUBSCRIBE_AAPL);
+        String reply = client.frames.poll(FRAME_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         client.closeBlocking();
 
-        assertThat(reply).isEqualTo("}{not-json");
+        assertThat(reply).isEqualTo(MALFORMED_FRAME);
     }
 
     @Test
     void unmatchedMessageYieldsNoFrame() throws Exception {
         messageStubFor(message()
-                .withName("known feed")
-                .withBody(equalTo("subscribe:AAPL"))
-                .willTriggerActions(sendMessage("price").onOriginatingChannel()));
+                .withName(KNOWN_FEED_STUB)
+                .withBody(equalTo(SUBSCRIBE_AAPL))
+                .willTriggerActions(sendMessage(ANY_PRICE_FRAME).onOriginatingChannel()));
 
-        CapturingClient client = connect("/exchange");
-        client.send("subscribe:UNKNOWN");
-        String reply = client.frames.poll(2, TimeUnit.SECONDS);
+        CapturingClient client = connect(EXCHANGE_PATH);
+        client.send(SUBSCRIBE_UNKNOWN);
+        String reply = client.frames.poll(SILENCE_WINDOW_SECONDS, TimeUnit.SECONDS);
         client.closeBlocking();
 
         assertThat(reply).isNull();
     }
 
     private static CapturingClient connect(String path) throws Exception {
-        CapturingClient client = new CapturingClient(new URI("ws://localhost:" + wireMock.port() + path));
-        client.connectBlocking(5, TimeUnit.SECONDS);
+        CapturingClient client = new CapturingClient(new URI(WS_ORIGIN_PREFIX + wireMock.port() + path));
+        client.connectBlocking(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         return client;
     }
 

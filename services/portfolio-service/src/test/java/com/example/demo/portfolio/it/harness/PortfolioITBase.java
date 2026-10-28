@@ -1,6 +1,7 @@
 package com.example.demo.portfolio.it.harness;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 
 import org.slf4j.LoggerFactory;
@@ -36,6 +37,14 @@ public abstract class PortfolioITBase {
     /** Owner of fills sent without an explicit owner, and subject of {@link #TOKEN}. */
     protected static final String TESTER = "tester";
     protected static final String TOKEN = token(TESTER);
+    /** Fill sides as the {@code fills} topic carries them. */
+    protected static final String BUY = "BUY";
+    protected static final String SELL = "SELL";
+    /** How long Kafka-driven effects (positions, fills, cash) are awaited. */
+    protected static final Duration WAIT = Duration.ofSeconds(20);
+    protected static final String DEPOSIT_PATH = "/funds/deposit";
+    protected static final String WITHDRAW_PATH = "/funds/withdraw";
+    protected static final String HOLDINGS_PATH = "/portfolio/holdings/{symbol}";
 
     @SuppressWarnings("resource")
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine")
@@ -113,8 +122,13 @@ public abstract class PortfolioITBase {
         return Json.read(body, BalanceResponse.class).cash();
     }
 
+    /** The {@code {"amount": …}} body of a deposit or withdrawal. */
+    protected static String amountBody(String amount) {
+        return "{\"amount\":" + amount + "}";
+    }
+
     /** {@code POST /funds/deposit} (expects 200). */
     protected void deposit(String token, String amount) {
-        api(token).body("{\"amount\":" + amount + "}").post("/funds/deposit").then().statusCode(200);
+        api(token).body(amountBody(amount)).post(DEPOSIT_PATH).then().statusCode(200);
     }
 }

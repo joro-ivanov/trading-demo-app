@@ -26,6 +26,17 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import static com.example.demo.e2e.framework.support.ApiErrorMessages.INVALID_REQUEST_CONTENT;
+import static com.example.demo.e2e.framework.support.ApiPaths.FUNDS_DEPOSIT;
+import static com.example.demo.e2e.framework.support.ApiPaths.FUNDS_WITHDRAW;
+import static com.example.demo.e2e.framework.support.ApiPaths.ORDERS;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.BAD_REQUEST;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.BAD_REQUEST_REASON;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CREATED;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.OK;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNPROCESSABLE_CONTENT;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNPROCESSABLE_CONTENT_REASON;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
@@ -43,101 +54,114 @@ class FundsTest extends BaseApiTest {
     private static final Pattern INSUFFICIENT_FUNDS_FOR_AAPL =
             Pattern.compile("Insufficient funds to buy 1 AAPL \\(cost (?<cost>\\d+\\.\\d{4}), available 0\\.0000\\)");
     private static final BigDecimal LIVE_PRICE_TOLERANCE = new BigDecimal("1.0000");
+    private static final String COST_GROUP = "cost";
+    private static final String FRESH_USER_PREFIX = "f";
+    private static final BigDecimal DEPOSIT = new BigDecimal("1000");
+    private static final BigDecimal WITHDRAWAL = new BigDecimal("400");
+    private static final BigDecimal BALANCE_AFTER_WITHDRAWAL = new BigDecimal("600");
+    private static final BigDecimal SMALL_DEPOSIT = new BigDecimal("100");
+    private static final BigDecimal OVERDRAWING_WITHDRAWAL = new BigDecimal("500");
+    private static final String OVERDRAW_MESSAGE = "Insufficient funds: balance 100.0000, requested 500.0000";
+    private static final BigDecimal NEGATIVE_AMOUNT = new BigDecimal("-5");
+    /** Enough cash to buy one share at any demo price. */
+    private static final BigDecimal FUNDING_DEPOSIT = new BigDecimal("100000");
+    /** The BUY fill and the SELL fill. */
+    private static final int BUY_AND_SELL_FILLS = 2;
 
     @Test
     void depositIncreasesTheBalance() {
-        String unfundedToken = registerFreshUser("f").token();
+        String unfundedToken = registerFreshUser(FRESH_USER_PREFIX).token();
         ApiResponse beforeBalanceResponse = FundsService.balance(unfundedToken);
         Balance beforeBalance = beforeBalanceResponse.as(Balance.class);
         assertSoftly(softly -> {
-            softly.assertThat(beforeBalanceResponse.statusCode()).isEqualTo(200);
-            softly.assertThat(beforeBalance.cash()).isEqualByComparingTo("0");
+            softly.assertThat(beforeBalanceResponse.statusCode()).isEqualTo(OK);
+            softly.assertThat(beforeBalance.cash()).isEqualByComparingTo(BigDecimal.ZERO);
         });
 
-        FundsService.deposit(unfundedToken, new BigDecimal("1000"));
+        FundsService.deposit(unfundedToken, DEPOSIT);
 
         ApiResponse afterBalanceResponse = FundsService.balance(unfundedToken);
         Balance afterBalance = afterBalanceResponse.as(Balance.class);
         assertSoftly(softly -> {
-            softly.assertThat(afterBalanceResponse.statusCode()).isEqualTo(200);
-            softly.assertThat(afterBalance.cash()).isEqualByComparingTo("1000");
+            softly.assertThat(afterBalanceResponse.statusCode()).isEqualTo(OK);
+            softly.assertThat(afterBalance.cash()).isEqualByComparingTo(DEPOSIT);
         });
     }
 
     @Test
     void withdrawDecreasesTheBalance() {
-        String unfundedToken = registerFreshUser("f").token();
-        FundsService.deposit(unfundedToken, new BigDecimal("1000"));
+        String unfundedToken = registerFreshUser(FRESH_USER_PREFIX).token();
+        FundsService.deposit(unfundedToken, DEPOSIT);
 
-        ApiResponse withdrawalResponse = FundsService.withdraw(unfundedToken, new BigDecimal("400"));
+        ApiResponse withdrawalResponse = FundsService.withdraw(unfundedToken, WITHDRAWAL);
         Balance after = withdrawalResponse.as(Balance.class);
 
         assertSoftly(softly -> {
-            softly.assertThat(withdrawalResponse.statusCode()).isEqualTo(200);
-            softly.assertThat(after.cash()).isEqualByComparingTo("600");
+            softly.assertThat(withdrawalResponse.statusCode()).isEqualTo(OK);
+            softly.assertThat(after.cash()).isEqualByComparingTo(BALANCE_AFTER_WITHDRAWAL);
         });
     }
 
     @Test
     void overWithdrawingIsRejectedWith422() {
-        String unfundedToken = registerFreshUser("f").token();
-        FundsService.deposit(unfundedToken, new BigDecimal("100"));
+        String unfundedToken = registerFreshUser(FRESH_USER_PREFIX).token();
+        FundsService.deposit(unfundedToken, SMALL_DEPOSIT);
 
-        ApiResponse response = FundsService.withdraw(unfundedToken, new BigDecimal("500"));
+        ApiResponse response = FundsService.withdraw(unfundedToken, OVERDRAWING_WITHDRAWAL);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(422);
-            softly.assertThat(problem.error()).isEqualTo("Unprocessable Content");
-            softly.assertThat(problem.status()).isEqualTo(422);
+            softly.assertThat(response.statusCode()).isEqualTo(UNPROCESSABLE_CONTENT);
+            softly.assertThat(problem.error()).isEqualTo(UNPROCESSABLE_CONTENT_REASON);
+            softly.assertThat(problem.status()).isEqualTo(UNPROCESSABLE_CONTENT);
             softly.assertThat(problem.message())
-                    .isEqualTo("Insufficient funds: balance 100.0000, requested 500.0000");
-            softly.assertThat(problem.path()).isEqualTo("/funds/withdraw");
+                    .isEqualTo(OVERDRAW_MESSAGE);
+            softly.assertThat(problem.path()).isEqualTo(FUNDS_WITHDRAW);
         });
     }
 
     @Test
     void aNonPositiveDepositIsRejectedWith400() {
-        String unfundedToken = registerFreshUser("f").token();
-        ApiResponse response = FundsService.deposit(unfundedToken, new BigDecimal("-5"));
+        String unfundedToken = registerFreshUser(FRESH_USER_PREFIX).token();
+        ApiResponse response = FundsService.deposit(unfundedToken, NEGATIVE_AMOUNT);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(400);
-            softly.assertThat(problem.error()).isEqualTo("Bad Request");
-            softly.assertThat(problem.status()).isEqualTo(400);
-            softly.assertThat(problem.message()).isEqualTo("Invalid request content.");
-            softly.assertThat(problem.path()).isEqualTo("/funds/deposit");
+            softly.assertThat(response.statusCode()).isEqualTo(BAD_REQUEST);
+            softly.assertThat(problem.error()).isEqualTo(BAD_REQUEST_REASON);
+            softly.assertThat(problem.status()).isEqualTo(BAD_REQUEST);
+            softly.assertThat(problem.message()).isEqualTo(INVALID_REQUEST_CONTENT);
+            softly.assertThat(problem.path()).isEqualTo(FUNDS_DEPOSIT);
         });
     }
 
     @RunDuringMarketHours
     @Test
     void anUnfundedBuyIsRejectedThenSucceedsAfterDeposit() {
-        String unfundedToken = registerFreshUser("f").token();
+        String unfundedToken = registerFreshUser(FRESH_USER_PREFIX).token();
         Allure.step("An unfunded BUY is rejected for insufficient funds");
-        ApiResponse rejectedOrder = OrdersService.placeMarketOrder(unfundedToken, TradingSymbols.AAPL, Side.BUY, new BigDecimal("1"));
+        ApiResponse rejectedOrder = OrdersService.placeMarketOrder(unfundedToken, TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
         ErrorResponse rejectedOrderProblem = rejectedOrder.as(ErrorResponse.class);
         Price currentPrice = MarketDataService.latestPrice(unfundedToken, TradingSymbols.AAPL).as(Price.class);
         BigDecimal rejectedCost = rejectedCost(rejectedOrderProblem);
         assertSoftly(softly -> {
-            softly.assertThat(rejectedOrder.statusCode()).isEqualTo(422);
-            softly.assertThat(rejectedOrderProblem.error()).isEqualTo("Unprocessable Content");
-            softly.assertThat(rejectedOrderProblem.status()).isEqualTo(422);
+            softly.assertThat(rejectedOrder.statusCode()).isEqualTo(UNPROCESSABLE_CONTENT);
+            softly.assertThat(rejectedOrderProblem.error()).isEqualTo(UNPROCESSABLE_CONTENT_REASON);
+            softly.assertThat(rejectedOrderProblem.status()).isEqualTo(UNPROCESSABLE_CONTENT);
             softly.assertThat(rejectedOrderProblem.message())
                     .matches(INSUFFICIENT_FUNDS_FOR_AAPL);
             softly.assertThat(rejectedCost).isCloseTo(currentPrice.price(), within(LIVE_PRICE_TOLERANCE));
-            softly.assertThat(rejectedOrderProblem.path()).isEqualTo("/orders");
+            softly.assertThat(rejectedOrderProblem.path()).isEqualTo(ORDERS);
         });
 
         Allure.step("After depositing, the same BUY succeeds");
-        FundsService.deposit(unfundedToken, new BigDecimal("100000"));
-        ApiResponse acceptedOrder = OrdersService.placeMarketOrder(unfundedToken, TradingSymbols.AAPL, Side.BUY, new BigDecimal("1"));
+        FundsService.deposit(unfundedToken, FUNDING_DEPOSIT);
+        ApiResponse acceptedOrder = OrdersService.placeMarketOrder(unfundedToken, TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
         OrderResponse acceptedOrderView = acceptedOrder.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(acceptedOrder.statusCode()).isEqualTo(201);
+            softly.assertThat(acceptedOrder.statusCode()).isEqualTo(CREATED);
             softly.assertThat(acceptedOrderView.id()).isNotBlank();
             softly.assertThat(acceptedOrderView.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(acceptedOrderView.side()).isEqualTo(Side.BUY);
-            softly.assertThat(acceptedOrderView.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(acceptedOrderView.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(acceptedOrderView.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(acceptedOrderView.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -146,7 +170,7 @@ class FundsTest extends BaseApiTest {
     private static BigDecimal rejectedCost(ErrorResponse problem) {
         return INSUFFICIENT_FUNDS_FOR_AAPL.matcher(problem.message()).results()
                 .findFirst()
-                .map(match -> new BigDecimal(match.group("cost")))
+                .map(match -> new BigDecimal(match.group(COST_GROUP)))
                 .orElseThrow(() -> new AssertionError("Unexpected insufficient-funds message: " + problem.message()));
     }
 
@@ -159,7 +183,7 @@ class FundsTest extends BaseApiTest {
         ApiResponse buyResponse = OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
         OrderResponse buyOrder = buyResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(buyResponse.statusCode()).isEqualTo(201);
+            softly.assertThat(buyResponse.statusCode()).isEqualTo(CREATED);
             softly.assertThat(buyOrder.id()).isNotBlank();
             softly.assertThat(buyOrder.side()).isEqualTo(Side.BUY);
         });
@@ -177,14 +201,14 @@ class FundsTest extends BaseApiTest {
         ApiResponse sellResponse = OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.SELL, BigDecimal.ONE);
         OrderResponse sellOrder = sellResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(sellResponse.statusCode()).isEqualTo(201);
+            softly.assertThat(sellResponse.statusCode()).isEqualTo(CREATED);
             softly.assertThat(sellOrder.id()).isNotBlank();
             softly.assertThat(sellOrder.side()).isEqualTo(Side.SELL);
         });
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             List<Fill> fills = PortfolioService.recentFills(token).asList(Fill.class);
-            assertThat(fills).hasSize(2);
+            assertThat(fills).hasSize(BUY_AND_SELL_FILLS);
             Fill sellFill = fills.getFirst();
             BigDecimal expectedAfterSell = afterBuy.add(sellFill.price().multiply(sellFill.quantity()));
             assertThat(FundsService.balance(token).as(Balance.class).cash()).isEqualByComparingTo(expectedAfterSell);

@@ -31,9 +31,12 @@ cd frontend/web-dashboard && npm run lint && npm run typecheck && npm run test:u
 - Tests are linear (setup → action → assert): **no conditionals, boolean operators or loops** in test
   code, one scenario per test, `@ParameterizedTest` wherever cases differ only in data.
 - Assert exact values, async via Awaitility (never `Thread.sleep`), time via an injected/mutable `Clock`.
+- **No magic values in any test** (all modules, e2e included): every string and number is a semantically
+  named constant or local variable, or an annotation data-table entry (`@CsvSource`). `0`, `1`, `""` and
+  `Allure.step`/assertion-description prose are allowed inline. PMD `build/pmd/no-magic-values.xml` enforces it.
   ITs must not use weak or non-deterministic assertions (`contains`, `doesNotContain`, ranges, `isNotNull`/
-  `isNotBlank`, Hamcrest `containsString`, WireMock `containing`). `<Svc>IntegrationTestArchitectureTest`
-  enforces this. Make the value deterministic instead (own owner per test, seed reset, fixed clock).
+  `isNotBlank`, Hamcrest `containsString`, WireMock `containing`). `<Module>TestAssertionsArchitectureTest`
+  enforces this in every backend module. Make the value deterministic instead (own owner per test, seed reset, fixed clock).
 - `*IT` = integration test (Failsafe, `verify`); `*Test` = unit/ArchUnit (Surefire).
 - Per-service ITs mock **only external communication** (WireMock HTTP/WS); Postgres/Kafka/Redis are real
   containers. Never mock internal beans.

@@ -4,9 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
 
-import java.time.Duration;
+import java.math.BigDecimal;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 
 import com.example.demo.common.json.Json;
 import com.example.demo.portfolio.it.harness.PortfolioITBase;
@@ -15,37 +16,40 @@ import com.example.demo.portfolio.web.HoldingResponse;
 /** {@code GET /portfolio/holdings/{symbol}}: the held quantity order-service's short-sell guard reads. */
 class HoldingsIT extends PortfolioITBase {
 
-    private static final Duration WAIT = Duration.ofSeconds(20);
+    private static final String HELD_SYMBOL = "HOLD";
+    private static final String HELD_QUANTITY = "8";
+    private static final String FILL_PRICE = "190";
+    private static final String UNKNOWN_SYMBOL = "NOPE";
 
     @Test
     void holdingsEndpointReportsHeldQuantity() {
-        KAFKA_PROBE.sendFill(TESTER, "HOLD", "BUY", "8", "190");
+        KAFKA_PROBE.sendFill(TESTER, HELD_SYMBOL, BUY, HELD_QUANTITY, FILL_PRICE);
         await().atMost(WAIT).untilAsserted(() ->
-                assertThat(position("HOLD").quantity()).isEqualByComparingTo("8"));
+                assertThat(position(HELD_SYMBOL).quantity()).isEqualByComparingTo(HELD_QUANTITY));
 
         String body = api(TOKEN)
-                .get("/portfolio/holdings/HOLD")
-                .then().statusCode(200)
+                .get(HOLDINGS_PATH, HELD_SYMBOL)
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
         HoldingResponse holding = Json.read(body, HoldingResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(holding.symbol()).isEqualTo("HOLD");
-            softly.assertThat(holding.quantity()).isEqualByComparingTo("8");
+            softly.assertThat(holding.symbol()).isEqualTo(HELD_SYMBOL);
+            softly.assertThat(holding.quantity()).isEqualByComparingTo(HELD_QUANTITY);
         });
     }
 
     @Test
     void holdingsEndpointReturnsZeroForUnknownSymbol() {
         String body = api(TOKEN)
-                .get("/portfolio/holdings/NOPE")
-                .then().statusCode(200)
+                .get(HOLDINGS_PATH, UNKNOWN_SYMBOL)
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
         HoldingResponse holding = Json.read(body, HoldingResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(holding.symbol()).isEqualTo("NOPE");
-            softly.assertThat(holding.quantity()).isEqualByComparingTo("0");
+            softly.assertThat(holding.symbol()).isEqualTo(UNKNOWN_SYMBOL);
+            softly.assertThat(holding.quantity()).isEqualByComparingTo(BigDecimal.ZERO);
         });
     }
 }

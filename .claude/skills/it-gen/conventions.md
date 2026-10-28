@@ -45,6 +45,9 @@ services/<svc>/src/test/java/com/example/demo/<pkg>/it/
   service and add:
   - `<Svc>IntegrationTestArchitectureTest`, generated from
     `.claude/skills/it-gen/IntegrationTestArchitectureTest.template.java` (replace `__PKG__` / `__NAME__`)
+  - `<Svc>TestAssertionsArchitectureTest`, generated from
+    `.claude/skills/it-gen/TestAssertionsArchitectureTest.template.java` (same placeholders): exact-value
+    assertions in all of the module's tests
   - `<Svc>ArchitectureTest` (the new services already have one with `neverProduceInternalServerError`)
   - the container log consumers and `logback-test.xml` file appenders, for every container it starts
     (`.withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.<name>")))`, logged to
@@ -97,7 +100,7 @@ services/<svc>/src/test/java/com/example/demo/<pkg>/it/
    or JSON field equality), the persisted state (repository/SQL), side effects (Kafka record fields via
    `KafkaProbe`, `WireMock.verify(...)` of the outbound request with its body), and the error body for
    failures (`status`, `error`, `message`).
-   **No weak or non-deterministic assertions** (enforced by `<Svc>IntegrationTestArchitectureTest` and
+   **No weak or non-deterministic assertions** (enforced in every test of every backend module by the generated `<Module>TestAssertionsArchitectureTest` and
    `TestLint`). Banned:
    - partial matches: `contains*`, `doesNotContain*`, `startsWith`/`endsWith`, `matches`,
      `anyMatch`/`allMatch`/`anySatisfy`/`allSatisfy`
@@ -130,6 +133,22 @@ services/<svc>/src/test/java/com/example/demo/<pkg>/it/
    - Async work uses `Awaitility` with an explicit `atMost`. No `Thread.sleep`, no `Math.random`,
      no `UUID.randomUUID()` in assertions, no `Instant.now()` except to mint JWTs.
    - Kafka: unique consumer `group.id` per probe, assert by record key.
+6. **No magic values.** Every string and number a test uses is named. Enforced in **all** test code
+   (every module, e2e included) by PMD `build/pmd/no-magic-values.xml` (`NoMagicValuesInTests`) and
+   TestLint. ArchUnit can't do it, because constants are inlined into the bytecode. A literal may
+   appear only:
+   - in a `final` field (a constant), at any depth, e.g. `Set.of("a", "b")`
+   - as the direct initializer of a local variable (`int quantity = 10;`, concatenation allowed)
+   - inside an annotation data table (`@CsvSource`, `@ValueSource`, `@ParameterizedTest(name)`)
+   - as `0`, `1` or `""`
+   - as prose that is never compared: the first argument of `Allure.step` / `as` / `describedAs` /
+     `withFailMessage`, or an `AssertionError` / `IllegalStateException` message
+
+   Status codes, quantities, prices, symbols, paths, JSON bodies and expected messages all need a
+   name. Prefer existing types (`HttpStatus.CREATED.value()`, enums, `TradingSymbols`). Names must be
+   **semantic** (`ORDER_QUANTITY`, `INSUFFICIENT_FUNDS_MESSAGE`), never value-echoes (`TEN = 10`,
+   `S_201`). Values or JSON bodies shared across classes go into `harness/` (e.g. `OrderJson.market(…)`),
+   which is plumbing and exempt.
 
 ## HTTP 500 is never expected
 

@@ -3,6 +3,7 @@ package com.example.demo.order.it.harness;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -50,9 +51,25 @@ public abstract class OrderITBase {
     /** Wednesday 2024-06-12, 14:00 America/New_York (18:00Z) — inside the 09:30–16:00 session. */
     public static final Instant DURING_HOURS = Instant.parse("2024-06-12T18:00:00Z");
 
-    protected static final String TESTER = Jwt.issue("tester", SECRET, 3600);
-    protected static final String ALICE = Jwt.issue("alice", SECRET, 3600);
-    protected static final String BOB = Jwt.issue("bob", SECRET, 3600);
+    protected static final String TESTER_NAME = "tester";
+    protected static final String ALICE_NAME = "alice";
+    protected static final String BOB_NAME = "bob";
+    protected static final String TESTER = Jwt.issue(TESTER_NAME, SECRET, 3600);
+    protected static final String ALICE = Jwt.issue(ALICE_NAME, SECRET, 3600);
+    protected static final String BOB = Jwt.issue(BOB_NAME, SECRET, 3600);
+
+    // Endpoints of the service under test.
+    protected static final String ORDERS_PATH = "/orders";
+    protected static final String ORDER_PATH = "/orders/{id}";
+    protected static final String HISTORY_PATH = "/orders/history";
+
+    /** Upper bound for an asynchronous effect (Kafka event, DB status change) to become visible. */
+    protected static final Duration EVENT_TIMEOUT = Duration.ofSeconds(20);
+    /** How long a "nothing is published" check listens before concluding nothing was. */
+    protected static final Duration NO_EVENT_WINDOW = Duration.ofSeconds(5);
+    /** A state that must not change is observed for this long (bounded by {@link #STAYS_UNCHANGED_TIMEOUT}). */
+    protected static final Duration STAYS_UNCHANGED_FOR = Duration.ofSeconds(3);
+    protected static final Duration STAYS_UNCHANGED_TIMEOUT = Duration.ofSeconds(8);
 
     /** A token for a dedicated owner, so owner-scoped lists hold exactly one test's data. */
     protected static String tokenFor(String owner) {
@@ -148,7 +165,7 @@ public abstract class OrderITBase {
 
     /** Places an order (expecting 201) and returns the response — setup for tests about later steps. */
     protected OrderResponse place(String token, String body) {
-        String response = api(token).body(body).post("/orders")
+        String response = api(token).body(body).post(ORDERS_PATH)
                 .then().statusCode(201)
                 .extract().asString();
         return Json.read(response, OrderResponse.class);

@@ -1,5 +1,14 @@
 package com.example.demo.marketdata.it;
 
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.BUY;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.FEED_SYMBOL;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.ORDERS_SUBMITTED;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.ORDER_ID_FIELD;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.SYMBOL_FIELD;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.UNCACHED_SYMBOL;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.restingEvent;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.submittedOrder;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.submittedTypedOrder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
@@ -24,24 +33,33 @@ import com.example.demo.marketdata.match.OrderMatcher;
  */
 class OrderMatchingIT extends MarketDataITBase {
 
-    private static final String ORDERS_SUBMITTED = "orders.submitted";
     private static final Duration WAIT = Duration.ofSeconds(20);
+
+    private static final String FULL_FILL_ORDER_ID = "ord-full";
+    private static final String FULL_FILL_QUANTITY = "7";
+    /** Quantity of every typed (LIMIT / STOP) order below. */
+    private static final String TYPED_ORDER_QUANTITY = "2";
+    private static final String RESTING_ORDER_ID = "ord-resting";
+    private static final String LIMIT = "LIMIT";
+    private static final String LIMIT_PRICE_FIELD = "limitPrice";
+    /** A BUY limit below the market (190.40), so it is not marketable. */
+    private static final String LIMIT_BELOW_MARKET = "180";
 
     @Test
     void orderForAKnownSymbolEmitsExactlyOneFullFill() {
-        awaitCachedPrice("AAPL", ExchangeFeedStubs.AAPL_LAST_PRICE);
+        awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
-        kafka().send(ORDERS_SUBMITTED, "ord-full", "{\"id\":\"ord-full\",\"symbol\":\"AAPL\",\"side\":\"BUY\","
-                + "\"quantity\":7,\"status\":\"SUBMITTED\"}");
+        kafka().send(ORDERS_SUBMITTED, FULL_FILL_ORDER_ID,
+                submittedOrder(FULL_FILL_ORDER_ID, FEED_SYMBOL, BUY, FULL_FILL_QUANTITY));
 
-        List<String> fills = kafka().awaitValuesWhere(OrderMatcher.FILLS_TOPIC, "orderId", "ord-full", 1, WAIT);
+        List<String> fills = kafka().awaitValuesWhere(OrderMatcher.FILLS_TOPIC, ORDER_ID_FIELD, FULL_FILL_ORDER_ID, 1, WAIT);
         assertThat(fills).hasSize(1);
         FillEvent fill = Json.read(fills.getFirst(), FillEvent.class);
         assertSoftly(softly -> {
-            softly.assertThat(fill.orderId()).isEqualTo("ord-full");
-            softly.assertThat(fill.symbol()).isEqualTo("AAPL");
-            softly.assertThat(fill.side()).isEqualTo("BUY");
-            softly.assertThat(fill.quantity()).isEqualByComparingTo("7");
+            softly.assertThat(fill.orderId()).isEqualTo(FULL_FILL_ORDER_ID);
+            softly.assertThat(fill.symbol()).isEqualTo(FEED_SYMBOL);
+            softly.assertThat(fill.side()).isEqualTo(BUY);
+            softly.assertThat(fill.quantity()).isEqualByComparingTo(FULL_FILL_QUANTITY);
             softly.assertThat(fill.price()).isEqualByComparingTo(ExchangeFeedStubs.AAPL_LAST_PRICE);
             softly.assertThat(fill.filledAt()).isEqualTo(NOW);
         });
@@ -59,17 +77,17 @@ class OrderMatchingIT extends MarketDataITBase {
         "ord-fill-STOPSELL19040,STOP,SELL,stopPrice,190.40", "ord-fill-STOPSELL200,STOP,SELL,stopPrice,200"
     })
     void marketableTypedOrderFillsAtMarketPrice(String id, String type, String side, String field, String price) {
-        awaitCachedPrice("AAPL", ExchangeFeedStubs.AAPL_LAST_PRICE);
+        awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
-        kafka().send(ORDERS_SUBMITTED, id, "{\"id\":\"" + id + "\",\"symbol\":\"AAPL\",\"side\":\"" + side
-                + "\",\"quantity\":2,\"type\":\"" + type + "\",\"" + field + "\":" + price + ",\"status\":\"SUBMITTED\"}");
+        kafka().send(ORDERS_SUBMITTED, id,
+                submittedTypedOrder(id, FEED_SYMBOL, side, TYPED_ORDER_QUANTITY, type, field, price));
 
-        List<String> fills = kafka().awaitValuesWhere(OrderMatcher.FILLS_TOPIC, "orderId", id, 1, WAIT);
+        List<String> fills = kafka().awaitValuesWhere(OrderMatcher.FILLS_TOPIC, ORDER_ID_FIELD, id, 1, WAIT);
         assertThat(fills).hasSize(1);
         FillEvent fill = Json.read(fills.getFirst(), FillEvent.class);
         assertSoftly(softly -> {
             softly.assertThat(fill.side()).isEqualTo(side);
-            softly.assertThat(fill.quantity()).isEqualByComparingTo("2");
+            softly.assertThat(fill.quantity()).isEqualByComparingTo(TYPED_ORDER_QUANTITY);
             softly.assertThat(fill.price()).isEqualByComparingTo(ExchangeFeedStubs.AAPL_LAST_PRICE);
         });
     }
@@ -82,26 +100,26 @@ class OrderMatchingIT extends MarketDataITBase {
         "ord-nofill-STOPBUY200,STOP,BUY,stopPrice,200", "ord-nofill-STOPSELL180,STOP,SELL,stopPrice,180"
     })
     void nonMarketableTypedOrderRestsWithoutAFill(String id, String type, String side, String field, String price) {
-        awaitCachedPrice("AAPL", ExchangeFeedStubs.AAPL_LAST_PRICE);
+        awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
-        kafka().send(ORDERS_SUBMITTED, id, "{\"id\":\"" + id + "\",\"symbol\":\"AAPL\",\"side\":\"" + side
-                + "\",\"quantity\":2,\"type\":\"" + type + "\",\"" + field + "\":" + price + ",\"status\":\"SUBMITTED\"}");
+        kafka().send(ORDERS_SUBMITTED, id,
+                submittedTypedOrder(id, FEED_SYMBOL, side, TYPED_ORDER_QUANTITY, type, field, price));
 
-        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, "orderId", id, 1, WAIT))
-                .containsExactly("{\"orderId\":\"" + id + "\"}");
-        assertThat(kafka().currentValuesWhere(OrderMatcher.FILLS_TOPIC, "orderId", id)).isEmpty();
+        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, ORDER_ID_FIELD, id, 1, WAIT))
+                .containsExactly(restingEvent(id));
+        assertThat(kafka().currentValuesWhere(OrderMatcher.FILLS_TOPIC, ORDER_ID_FIELD, id)).isEmpty();
     }
 
     // A non-marketable order emits an orders.resting event (so order-service can mark it PENDING).
     @Test
     void nonMarketableOrderEmitsARestingEvent() {
-        awaitCachedPrice("AAPL", ExchangeFeedStubs.AAPL_LAST_PRICE);
+        awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
-        kafka().send(ORDERS_SUBMITTED, "ord-resting", "{\"id\":\"ord-resting\",\"symbol\":\"AAPL\",\"side\":\"BUY\","
-                + "\"quantity\":2,\"type\":\"LIMIT\",\"limitPrice\":180,\"status\":\"SUBMITTED\"}");
+        kafka().send(ORDERS_SUBMITTED, RESTING_ORDER_ID, submittedTypedOrder(RESTING_ORDER_ID, FEED_SYMBOL, BUY,
+                TYPED_ORDER_QUANTITY, LIMIT, LIMIT_PRICE_FIELD, LIMIT_BELOW_MARKET));
 
-        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, "orderId", "ord-resting", 1, WAIT))
-                .containsExactly("{\"orderId\":\"ord-resting\"}");
+        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, ORDER_ID_FIELD, RESTING_ORDER_ID, 1, WAIT))
+                .containsExactly(restingEvent(RESTING_ORDER_ID));
     }
 
     // A symbol with no cached price never fills, whatever the type: the no-price guard runs before the
@@ -115,8 +133,8 @@ class OrderMatchingIT extends MarketDataITBase {
     void orderForAnUncachedSymbolRestsWithoutAFill(String id, String order) {
         kafka().send(ORDERS_SUBMITTED, id, order);
 
-        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, "orderId", id, 1, WAIT))
-                .containsExactly("{\"orderId\":\"" + id + "\"}");
-        assertThat(kafka().currentValuesWhere(OrderMatcher.FILLS_TOPIC, "symbol", "ZZZZ")).isEmpty();
+        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, ORDER_ID_FIELD, id, 1, WAIT))
+                .containsExactly(restingEvent(id));
+        assertThat(kafka().currentValuesWhere(OrderMatcher.FILLS_TOPIC, SYMBOL_FIELD, UNCACHED_SYMBOL)).isEmpty();
     }
 }

@@ -15,8 +15,10 @@ public final class RiskStubs {
     private RiskStubs() {
     }
 
+    public static final String CHECK = "/risk/check";
+
     /** Default: every order is within the owner's limits, so tests not about risk stay focused. */
     public static MappingBuilder allowsEverything() {
-        return post(urlPathEqualTo("/risk/check")).willReturn(okJson("{\"allowed\":true,\"reason\":null}"));
+        return post(urlPathEqualTo(CHECK)).willReturn(okJson("{\"allowed\":true,\"reason\":null}"));
     }
 }

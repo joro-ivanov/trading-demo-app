@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 /**
  * Fast "no logic in tests" check for the /it-gen workflow. It catches what the PMD rule in
  * build/pmd/test-conventions.xml does not: boolean operators, negation, comparisons and
- * callback-style branching/looping (forEach, ifPresent, …), and (in *IT classes) weak or
+ * callback-style branching/looping (forEach, ifPresent, …), and (in every test except ArchUnit rule classes) weak or
  * non-deterministic assertions (contains, ranges, isNotNull, …), mirroring the ArchUnit rule. Plain JDK, no dependencies.
  *
  * <pre>
@@ -23,7 +23,7 @@ import java.util.stream.Stream;
  */
 public class TestLint {
 
-    private record Rule(String name, Pattern pattern, boolean integrationTestsOnly) {
+    private record Rule(String name, Pattern pattern, boolean assertionRule) {
 
         Rule(String name, Pattern pattern) {
             this(name, pattern, false);
@@ -97,7 +97,9 @@ public class TestLint {
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].replaceAll("^\\s*(import|package)\\b.*", "");
             for (Rule rule : RULES) {
-                if (rule.integrationTestsOnly() && !file.toString().endsWith("IT.java")) {
+                // Assertion rules apply to every test, except the ArchUnit rule classes (their predicates call
+                // Set.contains / String.startsWith, which a regex cannot tell from AssertJ).
+                if (rule.assertionRule() && file.toString().endsWith("ArchitectureTest.java")) {
                     continue;
                 }
                 Matcher m = rule.pattern().matcher(line);
@@ -106,7 +108,81 @@ public class TestLint {
                 }
             }
         }
+        for (int i : magicValueLines(lines)) {
+            out.add(file + ":" + (i + 1) + ": magic value (name it: constant, local variable or annotation data table): "
+                    + lines[i].trim());
+        }
         return out;
+    }
+
+    // ---- no magic values (approximates PMD NoMagicValuesInTests in build/pmd/no-magic-values.xml) ----
+
+    private static final Pattern FINAL_DECLARATION = Pattern.compile("\\bfinal\\b[^=;(]*=");
+    private static final Pattern SIMPLE_LOCAL = Pattern.compile(
+            "^\\s*[\\w.<>\\[\\]?, ]+\\s+[A-Za-z_]\\w*\\s*=\\s*[^(;]*;\\s*$");
+    private static final Pattern PROSE_ARGUMENT = Pattern.compile(
+            "(?:\\.(?:step|as|describedAs|withFailMessage|overridingErrorMessage)"
+                    + "|new (?:AssertionError|IllegalStateException|IllegalArgumentException))"
+                    + "\\(\\s*\"S\"(?:\\s*\\+\\s*[^,)\"]*(?:\"S\")?)*");
+    private static final Pattern NON_EMPTY_STRING = Pattern.compile("\"S\"");
+    private static final Pattern NUMBER = Pattern.compile(
+            "(?<![\\w$.])(\\d[\\d_]*(?:\\.\\d+)?)(?:[eE][+-]?\\d+)?[lLfFdD]?(?![\\w.])");
+
+    /**
+     * Lines (0-based) with a string other than "" or a number other than 0/1, outside annotations, final
+     * declarations (any depth, multi-line), simple local-variable initializers, and prose arguments.
+     */
+    private static List<Integer> magicValueLines(String[] lines) {
+        List<Integer> hits = new ArrayList<>();
+        int annotationDepth = 0;
+        boolean inFinalInitializer = false;
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            String trimmed = line.trim();
+            if (annotationDepth > 0) {
+                annotationDepth += depthChange(line);
+                continue;
+            }
+            if (trimmed.startsWith("@")) {
+                annotationDepth = Math.max(0, depthChange(line));
+                continue;
+            }
+            if (inFinalInitializer) {
+                inFinalInitializer = !line.contains(";");
+                continue;
+            }
+            if (trimmed.startsWith("import ") || trimmed.startsWith("package ")) {
+                continue;
+            }
+            if (FINAL_DECLARATION.matcher(line).find()) {
+                inFinalInitializer = !line.contains(";");
+                continue;
+            }
+            if (SIMPLE_LOCAL.matcher(line).matches()) {
+                continue;
+            }
+            String code = PROSE_ARGUMENT.matcher(line).replaceAll("");
+            if (NON_EMPTY_STRING.matcher(code).find() || hasMagicNumber(code)) {
+                hits.add(i);
+            }
+        }
+        return hits;
+    }
+
+    private static boolean hasMagicNumber(String code) {
+        Matcher m = NUMBER.matcher(code);
+        while (m.find()) {
+            double value = Double.parseDouble(m.group(1).replace("_", ""));
+            if (value != 0 && value != 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int depthChange(String line) {
+        return (int) (line.chars().filter(ch -> ch == '(' || ch == '{').count()
+                - line.chars().filter(ch -> ch == ')' || ch == '}').count());
     }
 
     /** Blanks out comments, string/text-block and char literals, keeping newlines for line numbers. */
@@ -128,15 +204,16 @@ public class TestLint {
             } else if (src.startsWith("\"\"\"", i)) {
                 int end = src.indexOf("\"\"\"", i + 3);
                 end = end < 0 ? n : end + 3;
-                b.append("\"\"");
-                blank(b, src, i + 2, end);
+                b.append("\"S\"");
+                blank(b, src, i + 3, end);
                 i = end;
             } else if (c == '"' || c == '\'') {
                 int j = i + 1;
                 while (j < n && src.charAt(j) != c && src.charAt(j) != '\n') {
                     j += src.charAt(j) == '\\' ? 2 : 1;
                 }
-                b.append(c).append(c);
+                // Keep "" for an empty string (allowed) and "S" for any other, so magic values stay visible.
+                b.append(c).append(c == '"' && j > i + 1 ? "S" : "").append(c);
                 i = Math.min(j + 1, n);
             } else {
                 b.append(c);

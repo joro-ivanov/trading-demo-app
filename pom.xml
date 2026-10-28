@@ -144,6 +144,7 @@
                     <printFailingErrors>true</printFailingErrors>
                     <rulesets>
                         <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/test-conventions.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-magic-values.xml</ruleset>
                     </rulesets>
                 </configuration>
                 <executions>

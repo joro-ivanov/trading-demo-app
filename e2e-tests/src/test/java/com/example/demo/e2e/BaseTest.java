@@ -1,5 +1,6 @@
 package com.example.demo.e2e;
 
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CREATED;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.math.BigDecimal;
@@ -19,6 +20,8 @@ public abstract class BaseTest {
 
     protected static final String REGISTERED_USER_PASSWORD = "s3cret-pw";
     protected static final String EMAIL_DOMAIN = "demo.example.com";
+    /** Default prefix of generated usernames (a random suffix keeps every user unique). */
+    protected static final String USERNAME_PREFIX = "u";
     protected static final BigDecimal DEFAULT_STARTING_CASH = new BigDecimal("10000");
     protected static final String UI_BASE_URL = PlaywrightManager.browserReachableUiUrl(Config.get().get("ui.base.url"));
     protected static final Duration AWAIT_TIMEOUT = Config.get()
@@ -33,24 +36,27 @@ public abstract class BaseTest {
             .getDuration("e2e.ws.frame-timeout", Duration.ofSeconds(10));
     protected static final Duration SHORT_WS_FRAME_TIMEOUT = Config.get()
             .getDuration("e2e.ws.frame.short-timeout", Duration.ofSeconds(8));
+    private static final String UUID_SEPARATOR = "-";
+    private static final int USERNAME_SUFFIX_LENGTH = 10;
+    private static final String EMAIL_AT = "@";
     protected String username;
     protected String token;
 
     protected static String uniqueUsername() {
-        return uniqueUsername("u");
+        return uniqueUsername(USERNAME_PREFIX);
     }
 
     protected static String uniqueUsername(String prefix) {
-        return prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+        return prefix + UUID.randomUUID().toString().replace(UUID_SEPARATOR, "").substring(0, USERNAME_SUFFIX_LENGTH);
     }
 
     protected static String emailFor(String username) {
-        return username + "@" + EMAIL_DOMAIN;
+        return username + EMAIL_AT + EMAIL_DOMAIN;
     }
 
     @BeforeEach
     void registerPrimaryUser() {
-        Login primaryUser = registerFreshUser("u");
+        Login primaryUser = registerFreshUser(USERNAME_PREFIX);
         username = primaryUser.username();
         token = primaryUser.token();
         FundsService.deposit(token, DEFAULT_STARTING_CASH);
@@ -61,7 +67,7 @@ public abstract class BaseTest {
         ApiResponse response = AuthService.register(freshUsername, emailFor(freshUsername), REGISTERED_USER_PASSWORD);
         Login loginView = response.as(Login.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(loginView.username()).isEqualTo(freshUsername);
             softly.assertThat(loginView.token()).isNotBlank();
         });

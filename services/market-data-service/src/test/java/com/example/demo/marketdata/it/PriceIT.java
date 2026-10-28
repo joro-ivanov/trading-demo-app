@@ -1,8 +1,12 @@
 package com.example.demo.marketdata.it;
 
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.FEED_SYMBOL;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.TEST_SUBJECT;
+import static com.example.demo.marketdata.it.harness.MarketDataFixtures.pricePath;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 
 import com.example.demo.common.json.Json;
 import com.example.demo.marketdata.it.harness.MarketDataITBase;
@@ -12,26 +16,28 @@ import com.example.demo.marketdata.web.PriceResponse;
 /** {@code GET /prices/{symbol}}: the latest feed price, served from the Redis cache. */
 class PriceIT extends MarketDataITBase {
 
+    private static final String UNKNOWN_SYMBOL = "NOPE";
+
     @Test
     void servesTheLatestFeedPrice() {
-        awaitCachedPrice("AAPL", ExchangeFeedStubs.AAPL_LAST_PRICE);
+        awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
-        String body = api(validToken("tester"))
-                .get("/prices/AAPL")
-                .then().statusCode(200)
+        String body = api(validToken(TEST_SUBJECT))
+                .get(pricePath(FEED_SYMBOL))
+                .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
         PriceResponse response = Json.read(body, PriceResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.symbol()).isEqualTo("AAPL");
+            softly.assertThat(response.symbol()).isEqualTo(FEED_SYMBOL);
             softly.assertThat(response.price()).isEqualByComparingTo(ExchangeFeedStubs.AAPL_LAST_PRICE);
         });
     }
 
     @Test
     void unknownSymbolPriceReturns404() {
-        api(validToken("tester"))
-                .get("/prices/NOPE")
-                .then().statusCode(404);
+        api(validToken(TEST_SUBJECT))
+                .get(pricePath(UNKNOWN_SYMBOL))
+                .then().statusCode(HttpStatus.NOT_FOUND.value());
     }
 }

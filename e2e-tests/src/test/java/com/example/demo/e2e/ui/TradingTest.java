@@ -42,6 +42,18 @@ import io.qameta.allure.Allure;
 @ExtendWith(PlaywrightLifecycle.class)
 class TradingTest extends BaseUiTest {
 
+    /** Quantity of the main order in every dashboard trading scenario. */
+    private static final int ORDER_QUANTITY = 10;
+    private static final BigDecimal ORDER_SIZE = BigDecimal.valueOf(ORDER_QUANTITY);
+    /** Position bought first (via the API) so that a later SELL passes the short-sell guard. */
+    private static final BigDecimal SEEDED_POSITION = new BigDecimal("20");
+    /** A MARKET order has no price; the ticket's price field is left at zero. */
+    private static final String NO_PRICE = "0";
+    /** Below any market price: a SELL limit or BUY stop at it is marketable, a BUY limit at it rests. */
+    private static final String BELOW_MARKET_PRICE = "0.01";
+    /** 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits. */
+    private static final String UNREACHABLE_STOP_PRICE = "1000";
+
     @RunDuringMarketHours
     @ParameterizedTest(name = "BUY MARKET {0} through the dashboard")
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
@@ -51,7 +63,7 @@ class TradingTest extends BaseUiTest {
         OrderTicketPage ticket = orderTicketPage();
 
         Allure.step("Place a marketable MARKET BUY 10 " + symbol + " via the ticket");
-        dashboard.placeOrder(symbol, Side.BUY, 10, OrderType.MARKET, "0");
+        dashboard.placeOrder(symbol, Side.BUY, ORDER_QUANTITY, OrderType.MARKET, NO_PRICE);
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -59,7 +71,7 @@ class TradingTest extends BaseUiTest {
         Position position = position(symbol);
         assertSoftly(softly -> {
             softly.assertThat(position.symbol()).isEqualTo(symbol);
-            softly.assertThat(position.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
     }
 
@@ -68,10 +80,10 @@ class TradingTest extends BaseUiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellMarketOrderThroughTheDashboard(String symbol) {
         Allure.step("Seed a position in " + symbol + " (via the API) so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, new BigDecimal("20"));
+        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = position(symbol);
-            assertThat(seededPosition.quantity()).isEqualByComparingTo("20");
+            assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
         Allure.step("Open the dashboard and log in");
@@ -79,7 +91,7 @@ class TradingTest extends BaseUiTest {
         OrderTicketPage ticket = orderTicketPage();
 
         Allure.step("Place a marketable MARKET SELL 10 " + symbol + " via the ticket");
-        dashboard.placeOrder(symbol, Side.SELL, 10, OrderType.MARKET, "0");
+        dashboard.placeOrder(symbol, Side.SELL, ORDER_QUANTITY, OrderType.MARKET, NO_PRICE);
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -87,7 +99,7 @@ class TradingTest extends BaseUiTest {
             Position position = position(symbol);
             assertSoftly(softly -> {
                 softly.assertThat(position.symbol()).isEqualTo(symbol);
-                softly.assertThat(position.quantity()).isEqualByComparingTo("10");
+                softly.assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
             });
         });
     }
@@ -105,7 +117,7 @@ class TradingTest extends BaseUiTest {
                 MarketDataService.latestPrice(token, symbol).as(Price.class).price());
 
         Allure.step("Place a marketable LIMIT BUY 10 " + symbol + " @ " + limitPrice + " via the ticket");
-        dashboard.placeOrder(symbol, Side.BUY, 10, OrderType.LIMIT, limitPrice.toPlainString());
+        dashboard.placeOrder(symbol, Side.BUY, ORDER_QUANTITY, OrderType.LIMIT, limitPrice.toPlainString());
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -113,7 +125,7 @@ class TradingTest extends BaseUiTest {
         Position position = position(symbol);
         assertSoftly(softly -> {
             softly.assertThat(position.symbol()).isEqualTo(symbol);
-            softly.assertThat(position.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
     }
 
@@ -122,10 +134,10 @@ class TradingTest extends BaseUiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellLimitOrderThroughTheDashboard(String symbol) {
         Allure.step("Seed a position in " + symbol + " (via the API) so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, new BigDecimal("20"));
+        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = position(symbol);
-            assertThat(seededPosition.quantity()).isEqualByComparingTo("20");
+            assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
         Allure.step("Open the dashboard and log in");
@@ -133,7 +145,7 @@ class TradingTest extends BaseUiTest {
         OrderTicketPage ticket = orderTicketPage();
 
         Allure.step("Place a marketable LIMIT SELL 10 " + symbol + " via the ticket");
-        dashboard.placeOrder(symbol, Side.SELL, 10, OrderType.LIMIT, "0.01");
+        dashboard.placeOrder(symbol, Side.SELL, ORDER_QUANTITY, OrderType.LIMIT, BELOW_MARKET_PRICE);
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -141,7 +153,7 @@ class TradingTest extends BaseUiTest {
             Position position = position(symbol);
             assertSoftly(softly -> {
                 softly.assertThat(position.symbol()).isEqualTo(symbol);
-                softly.assertThat(position.quantity()).isEqualByComparingTo("10");
+                softly.assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
             });
         });
     }
@@ -155,7 +167,7 @@ class TradingTest extends BaseUiTest {
         OrderTicketPage ticket = orderTicketPage();
 
         Allure.step("Place a marketable STOP BUY 10 " + symbol + " via the ticket");
-        dashboard.placeOrder(symbol, Side.BUY, 10, OrderType.STOP, "0.01");
+        dashboard.placeOrder(symbol, Side.BUY, ORDER_QUANTITY, OrderType.STOP, BELOW_MARKET_PRICE);
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -163,7 +175,7 @@ class TradingTest extends BaseUiTest {
         Position position = position(symbol);
         assertSoftly(softly -> {
             softly.assertThat(position.symbol()).isEqualTo(symbol);
-            softly.assertThat(position.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
     }
 
@@ -172,10 +184,10 @@ class TradingTest extends BaseUiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellStopOrderThroughTheDashboard(String symbol) {
         Allure.step("Seed a position in " + symbol + " (via the API) so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, new BigDecimal("20"));
+        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = position(symbol);
-            assertThat(seededPosition.quantity()).isEqualByComparingTo("20");
+            assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
         Allure.step("Open the dashboard and log in");
@@ -187,7 +199,7 @@ class TradingTest extends BaseUiTest {
                 MarketDataService.latestPrice(token, symbol).as(Price.class).price());
 
         Allure.step("Place a marketable STOP SELL 10 " + symbol + " @ " + stopPrice + " via the ticket");
-        dashboard.placeOrder(symbol, Side.SELL, 10, OrderType.STOP, stopPrice.toPlainString());
+        dashboard.placeOrder(symbol, Side.SELL, ORDER_QUANTITY, OrderType.STOP, stopPrice.toPlainString());
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -195,7 +207,7 @@ class TradingTest extends BaseUiTest {
             Position position = position(symbol);
             assertSoftly(softly -> {
                 softly.assertThat(position.symbol()).isEqualTo(symbol);
-                softly.assertThat(position.quantity()).isEqualByComparingTo("10");
+                softly.assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
             });
         });
     }
@@ -213,7 +225,7 @@ class TradingTest extends BaseUiTest {
         BigDecimal before = googQuantity();
 
         Allure.step("Place a non-marketable " + orderType + " BUY 10 GOOG @ " + price);
-        dashboard.placeOrder(TradingSymbols.GOOG, Side.BUY, 10, orderType, price);
+        dashboard.placeOrder(TradingSymbols.GOOG, Side.BUY, ORDER_QUANTITY, orderType, price);
 
         Allure.step("The order is accepted (no error) — valid, just not marketable");
         ticket.awaitButtonIdle();
@@ -233,9 +245,8 @@ class TradingTest extends BaseUiTest {
 
     private static Stream<Arguments> pendingTypedOrders() {
         return Stream.of(
-                Arguments.of(OrderType.LIMIT, "0.01"),
-                // 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits
-                Arguments.of(OrderType.STOP, "1000"));
+                Arguments.of(OrderType.LIMIT, BELOW_MARKET_PRICE),
+                Arguments.of(OrderType.STOP, UNREACHABLE_STOP_PRICE));
     }
 
     private Position position(String symbol) {

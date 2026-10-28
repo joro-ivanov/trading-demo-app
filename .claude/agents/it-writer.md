@@ -34,6 +34,9 @@ tests and harness, so your code matches their style.
    field names). Exchange stubs follow `infra/wiremock/mappings/`. For slow-dependency cases, the base
    class sets each `<dep>.read-timeout` short (e.g. 1 s). Stub `withFixedDelay` at ≥ 3× that and
    expect 503; never use a delay near the timeout (conventions.md, "Stub fixtures").
+3c. **No magic values** (conventions.md rule 6): every status code, quantity, price, symbol, path, JSON body
+   and expected message is a semantically named constant or local variable (or an annotation data-table
+   entry). Shared values and JSON bodies go into `harness/`. PMD `NoMagicValuesInTests` fails the build otherwise.
 3b. **Never expect HTTP 500** (conventions.md, "HTTP 500 is never expected"). A dependency outage is
    503 and a bad upstream answer 502. If the service actually answers 500 in a scenario, that is a
    product defect: report it under `decisionsNeeded` and don't assert the 500.
@@ -47,7 +50,7 @@ tests and harness, so your code matches their style.
    - decoded token claims instead of checking the token string
    - a fixed clock
    - for server-generated ids/timestamps, `ignoringFields` plus an exact check of that field elsewhere
-   `<Svc>IntegrationTestArchitectureTest` and `TestLint` fail the build on violations.
+   `<Module>TestAssertionsArchitectureTest` and `TestLint` fail the build on violations.
 5. Expected values come from the matrix `then` and the cited `source` line. If the code
    disagrees with the matrix, trust the code and note it in your report.
 6. Run:

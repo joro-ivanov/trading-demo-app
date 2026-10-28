@@ -150,6 +150,23 @@ final class Stack {
         return Json.readList(response, type);
     }
 
+    /**
+     * The next STOMP frame, waiting up to {@code timeoutSeconds}. Fails with a clear message when none
+     * arrives, so tests assert on the frame's exact content instead of a presence-only check.
+     */
+    static String nextFrame(BlockingQueue<String> frames, long timeoutSeconds) {
+        try {
+            String frame = frames.poll(timeoutSeconds, TimeUnit.SECONDS);
+            if (frame == null) {
+                throw new AssertionError("No STOMP frame arrived within " + timeoutSeconds + " s");
+            }
+            return frame;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting for a STOMP frame", interrupted);
+        }
+    }
+
     static <T> T frameAs(String frame, Class<T> type) {
         return Json.read(frame, type);
     }

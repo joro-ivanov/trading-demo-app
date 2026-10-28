@@ -11,43 +11,58 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 class ApiRequestTest {
 
+    private static final String PATH = "/orders";
+    private static final String ANY_PATH = "/x";
+    private static final String TOKEN = "jwt-123";
+    private static final String HEADER_NAME = "X-Trace";
+    private static final String HEADER_VALUE = "abc";
+    private static final String QUERY_PARAM_NAME = "limit";
+    private static final String QUERY_PARAM_VALUE = "10";
+    private static final String PATH_PARAM_NAME = "id";
+    private static final String PATH_PARAM_VALUE = "9";
+    private static final String COOKIE_NAME = "session";
+    private static final String COOKIE_VALUE = "s1";
+    private static final String BODY = "payload";
+    private static final String NEW_HEADER_NAME = "a";
+    private static final String NEW_HEADER_VALUE = "b";
+
     @Test
     void buildsRequestWithExactValues() {
         ApiRequest request = ApiRequest.builder()
                 .method(HttpMethod.POST)
-                .path("/orders")
-                .token("jwt-123")
-                .header("X-Trace", "abc")
-                .queryParam("limit", "10")
-                .pathParam("id", "9")
-                .cookie("session", "s1")
-                .body("payload")
+                .path(PATH)
+                .token(TOKEN)
+                .header(HEADER_NAME, HEADER_VALUE)
+                .queryParam(QUERY_PARAM_NAME, QUERY_PARAM_VALUE)
+                .pathParam(PATH_PARAM_NAME, PATH_PARAM_VALUE)
+                .cookie(COOKIE_NAME, COOKIE_VALUE)
+                .body(BODY)
                 .build();
 
         assertSoftly(softly -> {
             softly.assertThat(request.method()).isEqualTo(HttpMethod.POST);
-            softly.assertThat(request.path()).isEqualTo("/orders");
-            softly.assertThat(request.token()).isEqualTo("jwt-123");
-            softly.assertThat(request.headers()).containsExactly(entry("X-Trace", "abc"));
-            softly.assertThat(request.queryParams()).containsExactly(entry("limit", "10"));
-            softly.assertThat(request.pathParams()).containsExactly(entry("id", "9"));
-            softly.assertThat(request.cookies()).containsExactly(entry("session", "s1"));
-            softly.assertThat(request.body()).isEqualTo("payload");
+            softly.assertThat(request.path()).isEqualTo(PATH);
+            softly.assertThat(request.token()).isEqualTo(TOKEN);
+            softly.assertThat(request.headers()).containsExactly(entry(HEADER_NAME, HEADER_VALUE));
+            softly.assertThat(request.queryParams()).containsExactly(entry(QUERY_PARAM_NAME, QUERY_PARAM_VALUE));
+            softly.assertThat(request.pathParams()).containsExactly(entry(PATH_PARAM_NAME, PATH_PARAM_VALUE));
+            softly.assertThat(request.cookies()).containsExactly(entry(COOKIE_NAME, COOKIE_VALUE));
+            softly.assertThat(request.body()).isEqualTo(BODY);
         });
     }
 
     @Test
     void headersMapIsImmutable() {
-        ApiRequest request = ApiRequest.builder().method(HttpMethod.GET).path("/x").build();
+        ApiRequest request = ApiRequest.builder().method(HttpMethod.GET).path(ANY_PATH).build();
 
-        assertThatThrownBy(() -> request.headers().put("a", "b"))
+        assertThatThrownBy(() -> request.headers().put(NEW_HEADER_NAME, NEW_HEADER_VALUE))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @ParameterizedTest
     @EnumSource(HttpMethod.class)
     void buildsEveryMethod(HttpMethod method) {
-        ApiRequest request = ApiRequest.builder().method(method).path("/x").build();
+        ApiRequest request = ApiRequest.builder().method(method).path(ANY_PATH).build();
 
         assertThat(request.method()).isEqualTo(method);
     }

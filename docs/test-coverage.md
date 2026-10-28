@@ -335,7 +335,9 @@ What is enforced:
 - import/style hygiene with Checkstyle
 - frontend linting with ESLint
 - frontend dependency boundaries with dependency-cruiser
-- no weak / non-deterministic assertions and no internal mocking in ITs (ArchUnit `<Svc>IntegrationTestArchitectureTest`)
+- no internal mocking in ITs (ArchUnit `<Svc>IntegrationTestArchitectureTest`); no weak / non-deterministic
+  assertions in any backend test (ArchUnit `<Module>TestAssertionsArchitectureTest` in every service, common,
+  integration-tests and wiremock-ws-spike)
 - no HTTP 500 produced or expected (PMD `no-internal-server-error.xml`, ArchUnit `neverProduceInternalServerError`)
 - TestLint (fast regex pre-check) and LogScan (service, test and container logs of IT runs) in the `/it-gen` workflow
 

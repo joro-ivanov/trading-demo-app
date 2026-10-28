@@ -120,8 +120,15 @@ Methods are `static`, return `ApiResponse`, **no validation** (negative cases mu
 - PMD `build/pmd/no-internal-server-error.xml` (backend production **and** test code) bans producing or
   expecting HTTP 500: `statusCode(500)`, `INTERNAL_SERVER_ERROR`, `internalServerError()`. ArchUnit's
   `neverProduceInternalServerError` checks the same on production bytecode.
-- ArchUnit (`<Svc>IntegrationTestArchitectureTest`, one per service) forbids **weak or
-  non-deterministic assertions** in ITs:
+- PMD `build/pmd/no-magic-values.xml` (all test code, every module) bans **magic values**. Name every
+  string and number: a semantic constant (`ORDER_QUANTITY`, not `TEN`), a local variable, or an
+  annotation data table (`@CsvSource`). JSON bodies shared across a service's ITs go into
+  `harness/` builders. Allowed inline: `0`, `1`, `""`, and description prose (`Allure.step`,
+  assertion descriptions, `AssertionError` messages).
+- ArchUnit `<Module>TestAssertionsArchitectureTest` (generated from one template into every backend
+  module: the services, common, integration-tests and wiremock-ws-spike) forbids **weak or
+  non-deterministic assertions** in all their tests (unit, ArchUnit and ITs; e2e is excluded because it
+  asserts live values on a running stack):
   - AssertJ partial, range and presence-only assertions (`contains*`, `doesNotContain*`, `startsWith`,
     `isGreaterThan`, `isBetween`, `isCloseTo`, `isAfter`, `isNotNull`, `isNotBlank`, `isNotEmpty`, `isNotEqualTo`, …)
   - the Hamcrest equivalents in REST-Assured `body(...)`

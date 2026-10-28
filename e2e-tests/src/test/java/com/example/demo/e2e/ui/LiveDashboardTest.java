@@ -43,7 +43,7 @@ class LiveDashboardTest extends BaseUiTest {
     @RunDuringMarketHours
     @Test
     void loggingInAsADifferentUserShowsADifferentPortfolio() {
-        String secondUsername = registerFreshUser("u").username();
+        String secondUsername = registerFreshUser(USERNAME_PREFIX).username();
 
         Allure.step("Alice logs in, buys AAPL, and sees it");
         DashboardPage alice = loginAsPrimaryUser();

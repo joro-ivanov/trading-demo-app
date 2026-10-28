@@ -9,7 +9,7 @@ decimal. Done = **score ≥ 9.0 and zero blocking issues**.
 | C2 Assertion strength | 2.0 | Exact status + full body (or every field) + error body on failures + persisted state + Kafka record fields + `WireMock.verify` of outbound requests incl. body. Every value asserted exactly; no partial/range/presence-only assertions (see conventions.md rule 4); `ignoringFields` only for server-generated values that are asserted exactly elsewhere. |
 | C3 Determinism | 2.0 | Fixed `MutableClock`, unique data per test, no order dependence, Awaitility with `atMost`, no sleep/random/now (except JWT minting), unmatched WireMock requests fail, consumer group per probe. Timeout cases use a fixed delay ≥ 3× the (short) test read timeout, never a delay near it. |
 | C4 Mock boundary | 1.5 | Only external communication is stubbed; real Postgres/Kafka/Redis; stub JSON matches the provider DTO field-for-field; precise URL/body matchers; fixtures reused, not inline. |
-| C5 Structure & readability | 1.5 | One class per endpoint/listener, one scenario per test, parameterized where only data differs, names state scenario + outcome, harness holds all plumbing, follows `conventions.md`. |
+| C5 Structure & readability | 1.5 | One class per endpoint/listener, one scenario per test, parameterized where only data differs, names state scenario + outcome, every value semantically named (no magic values, no value-echo constants like `TEN = 10`), harness holds all plumbing, follows `conventions.md`. |
 
 ## Hard caps (apply the lowest)
 
@@ -29,6 +29,8 @@ decimal. Done = **score ≥ 9.0 and zero blocking issues**.
 
 - A `must` case from the matrix is missing.
 - Data-only duplicates that should be one `@ParameterizedTest`.
+- A magic value in a test (PMD `NoMagicValuesInTests` / TestLint), or a constant whose name only echoes its
+  value (`TEN = 10`, `S_201`) instead of saying what it means.
 - An expected value that contradicts the code (the reviewer must cite the code line).
 - A test expecting 500, or a scenario whose response was an unhandled 500 at runtime (LogScan
   `unhandledHttp500: true`). The first is a test defect; the second is a product defect for the decision gate.
