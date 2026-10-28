@@ -117,7 +117,9 @@ public abstract class OrderITBase {
         RISK.resetAll();
         EXCHANGE.stubFor(ExchangeStubs.acceptsOrders());
         PORTFOLIO.stubFor(PortfolioStubs.holdsPlentyOfEverything());
-        MARKET_DATA.stubFor(MarketDataStubs.hasNoPrices());
+        // Enough cash for every BUY in the suite (incl. the 999999999-share boundary at the default price).
+        PORTFOLIO.stubFor(PortfolioStubs.hasCash("1000000000000"));
+        MARKET_DATA.stubFor(MarketDataStubs.pricesEverySymbolAt("100"));
         RISK.stubFor(RiskStubs.allowsEverything());
         clock.set(DURING_HOURS);
     }

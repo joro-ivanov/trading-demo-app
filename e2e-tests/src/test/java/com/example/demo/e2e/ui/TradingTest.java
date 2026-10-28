@@ -15,13 +15,16 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.example.demo.e2e.framework.model.Position;
+import com.example.demo.e2e.framework.model.Price;
 import com.example.demo.e2e.framework.model.OrderType;
 import com.example.demo.e2e.framework.model.Side;
 import com.example.demo.e2e.framework.model.TradingSymbols;
 import com.example.demo.e2e.framework.pages.DashboardPage;
 import com.example.demo.e2e.framework.pages.OrderTicketPage;
+import com.example.demo.e2e.framework.service.marketdata.MarketDataService;
 import com.example.demo.e2e.framework.service.order.OrdersService;
 import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
+import com.example.demo.e2e.framework.support.OrderFactory;
 import com.example.demo.e2e.harness.PlaywrightLifecycle;
 import com.example.demo.e2e.harness.RequireRunningBackend;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
@@ -97,8 +100,12 @@ class TradingTest extends BaseUiTest {
         DashboardPage dashboard = loginAsPrimaryUser();
         OrderTicketPage ticket = orderTicketPage();
 
-        Allure.step("Place a marketable LIMIT BUY 10 " + symbol + " via the ticket");
-        dashboard.placeOrder(symbol, Side.BUY, 10, OrderType.LIMIT, "100000");
+        Allure.step("Read the latest " + symbol + " price; a limit 10% above it is immediately marketable");
+        BigDecimal limitPrice = OrderFactory.marketableBuyLimit(
+                MarketDataService.latestPrice(token, symbol).as(Price.class).price());
+
+        Allure.step("Place a marketable LIMIT BUY 10 " + symbol + " @ " + limitPrice + " via the ticket");
+        dashboard.placeOrder(symbol, Side.BUY, 10, OrderType.LIMIT, limitPrice.toPlainString());
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -175,8 +182,12 @@ class TradingTest extends BaseUiTest {
         DashboardPage dashboard = loginAsPrimaryUser();
         OrderTicketPage ticket = orderTicketPage();
 
-        Allure.step("Place a marketable STOP SELL 10 " + symbol + " via the ticket");
-        dashboard.placeOrder(symbol, Side.SELL, 10, OrderType.STOP, "1000000");
+        Allure.step("Read the latest " + symbol + " price; a SELL stop 10% above it is already breached");
+        BigDecimal stopPrice = OrderFactory.marketableSellStop(
+                MarketDataService.latestPrice(token, symbol).as(Price.class).price());
+
+        Allure.step("Place a marketable STOP SELL 10 " + symbol + " @ " + stopPrice + " via the ticket");
+        dashboard.placeOrder(symbol, Side.SELL, 10, OrderType.STOP, stopPrice.toPlainString());
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -223,7 +234,8 @@ class TradingTest extends BaseUiTest {
     private static Stream<Arguments> pendingTypedOrders() {
         return Stream.of(
                 Arguments.of(OrderType.LIMIT, "0.01"),
-                Arguments.of(OrderType.STOP, "1000000"));
+                // 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits
+                Arguments.of(OrderType.STOP, "1000"));
     }
 
     private Position position(String symbol) {

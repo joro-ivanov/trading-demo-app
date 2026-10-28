@@ -56,9 +56,6 @@ import static org.awaitility.Awaitility.await;
 @ExtendWith(TestLogArtifacts.class)
 class TradingTest extends BaseApiTest {
 
-    private static final String LIMIT_PRICE_FIELD = "limitPrice";
-    private static final String STOP_PRICE_FIELD = "stopPrice";
-
     @RunDuringMarketHours
     @ParameterizedTest(name = "BUY MARKET {0}")
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
@@ -135,8 +132,12 @@ class TradingTest extends BaseApiTest {
     @ParameterizedTest(name = "BUY LIMIT {0}")
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingABuyLimitOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
-        Allure.step("Place a marketable LIMIT BUY order for 10 " + symbol);
-        OrderRequest limitOrder = OrderFactory.limitBuy(symbol, 10, new BigDecimal("100000"));
+        Allure.step("Read the latest " + symbol + " price; a limit 10% above it is immediately marketable");
+        BigDecimal limitPrice = OrderFactory.marketableBuyLimit(
+                MarketDataService.latestPrice(token, symbol).as(Price.class).price());
+
+        Allure.step("Place a marketable LIMIT BUY order for 10 " + symbol + " @ " + limitPrice);
+        OrderRequest limitOrder = OrderFactory.limitBuy(symbol, 10, limitPrice);
         ApiResponse response = OrdersService.placeOrder(token, limitOrder);
         OrderResponse orderResponse = response.as(OrderResponse.class);
         assertSoftly(softly -> {
@@ -146,7 +147,7 @@ class TradingTest extends BaseApiTest {
             softly.assertThat(orderResponse.side()).isEqualTo(Side.BUY);
             softly.assertThat(orderResponse.quantity()).isEqualByComparingTo("10");
             softly.assertThat(orderResponse.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(orderResponse.limitPrice()).isEqualByComparingTo("100000");
+            softly.assertThat(orderResponse.limitPrice()).isEqualByComparingTo(limitPrice);
             softly.assertThat(orderResponse.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
         String orderId = orderResponse.id();
@@ -239,8 +240,12 @@ class TradingTest extends BaseApiTest {
             assertThat(seededPosition.quantity()).isEqualByComparingTo("20");
         });
 
-        Allure.step("Place a marketable STOP SELL order for 10 " + symbol);
-        OrderRequest stopSellOrderRequest = OrderFactory.stopSell(symbol, 10, new BigDecimal("1000000"));
+        Allure.step("Read the latest " + symbol + " price; a SELL stop 10% above it is already breached");
+        BigDecimal stopPrice = OrderFactory.marketableSellStop(
+                MarketDataService.latestPrice(token, symbol).as(Price.class).price());
+
+        Allure.step("Place a marketable STOP SELL order for 10 " + symbol + " @ " + stopPrice);
+        OrderRequest stopSellOrderRequest = OrderFactory.stopSell(symbol, 10, stopPrice);
         ApiResponse response = OrdersService.placeOrder(token, stopSellOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
@@ -250,7 +255,7 @@ class TradingTest extends BaseApiTest {
             softly.assertThat(order.side()).isEqualTo(Side.SELL);
             softly.assertThat(order.quantity()).isEqualByComparingTo("10");
             softly.assertThat(order.type()).isEqualTo(OrderType.STOP);
-            softly.assertThat(order.stopPrice()).isEqualByComparingTo("1000000");
+            softly.assertThat(order.stopPrice()).isEqualByComparingTo(stopPrice);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
         String orderId = order.id();
@@ -400,8 +405,12 @@ class TradingTest extends BaseApiTest {
     @RunDuringMarketHours
     @Test
     void limitOrderFillsAtMarketPriceNotAtTheLimitAcrossTheChain() {
-        Allure.step("Place a LIMIT BUY 10 GOOG @ 100000 (immediately marketable)");
-        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.GOOG, 10, new BigDecimal("100000"));
+        Allure.step("Read the latest GOOG price; a limit 10% above it is immediately marketable");
+        BigDecimal limitPrice = OrderFactory.marketableBuyLimit(
+                MarketDataService.latestPrice(token, TradingSymbols.GOOG).as(Price.class).price());
+
+        Allure.step("Place a LIMIT BUY 10 GOOG @ " + limitPrice + " (immediately marketable)");
+        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.GOOG, 10, limitPrice);
         ApiResponse response = OrdersService.placeOrder(this.token, limitBuyOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
@@ -411,11 +420,11 @@ class TradingTest extends BaseApiTest {
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
             softly.assertThat(order.quantity()).isEqualByComparingTo("10");
             softly.assertThat(order.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(order.limitPrice()).isEqualByComparingTo("100000");
+            softly.assertThat(order.limitPrice()).isEqualByComparingTo(limitPrice);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
 
-        Allure.step("It fills at the persisted market fill price, not the 100000 limit");
+        Allure.step("It fills at the persisted market fill price, not the " + limitPrice + " limit");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Fill latestFill = PortfolioService.recentFills(token).asList(Fill.class).stream()
                     .filter(fill -> fill.orderId().equals(order.id()))
@@ -427,7 +436,7 @@ class TradingTest extends BaseApiTest {
                     .orElseThrow();
             assertSoftly(softly -> {
                 softly.assertThat(latestFill.price()).isEqualByComparingTo(googPosition.avgPrice());
-                softly.assertThat(latestFill.price()).isNotEqualByComparingTo("100000");
+                softly.assertThat(latestFill.price()).isNotEqualByComparingTo(limitPrice);
             });
         });
     }
@@ -463,9 +472,11 @@ class TradingTest extends BaseApiTest {
     // it, so it is saved with status PENDING. (Marketable typed fills are covered above; the matcher's
     // directional logic is owned by the market-data-service OrderMatchingIT.)
     @RunDuringMarketHours
+    @Test
     void pendingStopOrderIsSubmittedAndResolvesToPending() {
-        Allure.step("Place a non-marketable STOP BUY 1 GOOG (1000000)");
-        OrderRequest stopBuyOrderRequest = OrderFactory.stopBuy(TradingSymbols.GOOG, 1, new BigDecimal("1000000"));
+        // 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits.
+        Allure.step("Place a non-marketable STOP BUY 1 GOOG (1000)");
+        OrderRequest stopBuyOrderRequest = OrderFactory.stopBuy(TradingSymbols.GOOG, 1, new BigDecimal("1000"));
         ApiResponse response = OrdersService.placeOrder(token, stopBuyOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
@@ -783,9 +794,4 @@ class TradingTest extends BaseApiTest {
                 Arguments.of(Side.SELL, TradingSymbols.AAPL));
     }
 
-    private static Stream<Arguments> pendingTypedOrders() {
-        return Stream.of(
-                Arguments.of(OrderType.LIMIT, LIMIT_PRICE_FIELD, "0.01"),
-                Arguments.of(OrderType.STOP, STOP_PRICE_FIELD, "1000000"));
-    }
 }

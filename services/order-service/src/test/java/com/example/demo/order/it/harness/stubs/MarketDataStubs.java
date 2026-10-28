@@ -17,9 +17,19 @@ public final class MarketDataStubs {
     private MarketDataStubs() {
     }
 
-    /** Default: no cached price for any symbol, so BUY tests that are not about funds stay focused. */
-    public static MappingBuilder hasNoPrices() {
-        return get(urlPathMatching("/prices/[^/]+")).willReturn(notFound());
+    /**
+     * Default: every symbol has a cached price, so an order of any type can be valued (a MARKET order
+     * with no price is refused) and tests not about pricing stay focused. order-service reads only
+     * {@code price}, so the echoed symbol is a fixed placeholder.
+     */
+    public static MappingBuilder pricesEverySymbolAt(String price) {
+        return get(urlPathMatching("/prices/[^/]+"))
+                .willReturn(okJson("{\"symbol\":\"ANY\",\"price\":" + price + "}"));
+    }
+
+    /** market-data has no cached price for {@code symbol} (404). */
+    public static MappingBuilder hasNoPriceFor(String symbol) {
+        return get(urlPathEqualTo("/prices/" + symbol)).willReturn(notFound());
     }
 
     public static MappingBuilder hasPrice(String symbol, String price) {

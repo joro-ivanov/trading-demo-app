@@ -276,14 +276,52 @@ class PlaceOrderIT extends OrderITBase {
         assertThat(response.status()).isEqualTo("SUBMITTED");
     }
 
-    // No cached price → the order can't be valued → funds guard skipped (accepted even with zero cash).
+    // No cached market price → the funds guard can't value the BUY and is skipped (accepted even with zero
+    // cash). A LIMIT order is used because the risk check still values it at its own limit price; a
+    // MARKET order without a price is refused instead (see aMarketOrderWithNoMarketPriceIsRefused…).
     @Test
-    void aBuyWithNoCachedPriceSkipsTheFundsCheck() {
+    void aLimitBuyWithNoMarketPriceSkipsTheFundsCheck() {
+        MARKET_DATA.stubFor(MarketDataStubs.hasNoPriceFor("NOPX"));
         PORTFOLIO.stubFor(PortfolioStubs.hasCash("0"));
 
-        OrderResponse response = place(TESTER, "{\"symbol\":\"NOPX\",\"side\":\"BUY\",\"quantity\":1}");
+        OrderResponse response = place(TESTER,
+                "{\"symbol\":\"NOPX\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"LIMIT\",\"limitPrice\":5}");
 
         assertThat(response.status()).isEqualTo("SUBMITTED");
+    }
+
+    // ---- risk check: every order type, valued at its worst-case execution price ----
+
+    @ParameterizedTest(name = "{0} is risk-checked at {2}")
+    @CsvSource(delimiter = '|', value = {
+        "MARKET | {\"symbol\":\"RISKV\",\"side\":\"BUY\",\"quantity\":2}                                  | 100",
+        "LIMIT  | {\"symbol\":\"RISKV\",\"side\":\"BUY\",\"quantity\":2,\"type\":\"LIMIT\",\"limitPrice\":120} | 120",
+        "STOP   | {\"symbol\":\"RISKV\",\"side\":\"BUY\",\"quantity\":2,\"type\":\"STOP\",\"stopPrice\":150}   | 150"
+    })
+    void everyOrderTypeIsRiskCheckedAtItsWorstCasePrice(String type, String order, String riskPrice) {
+        place(TESTER, order);
+
+        RISK.verify(postRequestedFor(urlPathEqualTo("/risk/check"))
+                .withRequestBody(equalToJson(
+                        "{\"symbol\":\"RISKV\",\"side\":\"BUY\",\"quantity\":2,\"price\":" + riskPrice + "}")));
+    }
+
+    @Test
+    void aMarketOrderWithNoMarketPriceIsRefusedBecauseItCannotBeValued() {
+        MARKET_DATA.stubFor(MarketDataStubs.hasNoPriceFor("NOPX"));
+
+        String response = api(TESTER).body("{\"symbol\":\"NOPX\",\"side\":\"SELL\",\"quantity\":1}").post("/orders")
+                .then().statusCode(422)
+                .extract().asString();
+
+        ApiError error = Json.read(response, ApiError.class);
+        assertSoftly(softly -> {
+            softly.assertThat(error.status()).isEqualTo(422);
+            softly.assertThat(error.message()).isEqualTo("Order cannot be valued: no market price for NOPX");
+            softly.assertThat(error.path()).isEqualTo("/orders");
+        });
+        RISK.verify(0, postRequestedFor(urlPathEqualTo("/risk/check")));
+        EXCHANGE.verify(0, postRequestedFor(urlPathEqualTo(ExchangeStubs.ORDERS)));
     }
 
     // ---- exchange outcomes ----

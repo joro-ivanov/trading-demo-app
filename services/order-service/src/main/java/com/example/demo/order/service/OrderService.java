@@ -63,7 +63,7 @@ public class OrderService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Market is closed");
         }
         guardAgainstShortSell(request, owner);
-        // Looked up once: the funds guard values a BUY with it, the risk check values a non-LIMIT order.
+        // Looked up once: the funds guard values a BUY with it, the risk check values a MARKET order.
         Optional<BigDecimal> marketPrice = needsMarketPrice(request)
                 ? marketPriceClient.latestPrice(request.symbol())
                 : Optional.empty();
@@ -125,24 +125,33 @@ public class OrderService {
 
     private boolean needsMarketPrice(PlaceOrderRequest request) {
         return request.side() == Side.BUY
-                || (riskProperties.enabled() && request.typeOrDefault() != OrderType.LIMIT);
+                || (riskProperties.enabled() && request.typeOrDefault() == OrderType.MARKET);
     }
 
-    // The last pre-trade guard: risk-service applies the owner's notional and position limits. A LIMIT
-    // order is valued at its limit price, anything else at the market price (null if none is known,
-    // in which case risk-service skips the notional rule). A refusal is a 422 with risk-service's
-    // reason; an unreachable risk-service is a 503 from the client (fail closed).
+    // The last pre-trade guard: risk-service applies the owner's notional and position limits to every
+    // order type. A refusal is a 422 with risk-service's reason; an unreachable risk-service is a 503
+    // from the client (fail closed).
     private void guardAgainstRiskLimits(PlaceOrderRequest request, String owner, Optional<BigDecimal> marketPrice) {
         if (!riskProperties.enabled()) {
             return;
         }
-        BigDecimal price = request.typeOrDefault() == OrderType.LIMIT
-                ? request.limitPrice()
-                : marketPrice.orElse(null);
+        BigDecimal price = riskValuationPrice(request, marketPrice);
         RiskDecision decision = riskClient.check(owner, request.symbol(), request.side(), request.quantity(), price);
         if (!decision.allowed()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, decision.reason());
         }
+    }
+
+    // Every order is valued at its worst-case execution price: a LIMIT at its limit, a STOP at its stop
+    // (once triggered it executes at or beyond it), a MARKET at the current market price. A MARKET order
+    // with no known price cannot be valued, so it is refused rather than skipping the notional rule.
+    private static BigDecimal riskValuationPrice(PlaceOrderRequest request, Optional<BigDecimal> marketPrice) {
+        return switch (request.typeOrDefault()) {
+            case LIMIT -> request.limitPrice();
+            case STOP -> request.stopPrice();
+            case MARKET -> marketPrice.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Order cannot be valued: no market price for " + request.symbol()));
+        };
     }
 
     @Transactional(readOnly = true)

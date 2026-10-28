@@ -34,12 +34,15 @@ public final class RiskDtos {
             @NotNull @Positive @Digits(integer = 15, fraction = 4) BigDecimal maxPositionQuantity) {
     }
 
-    /** {@code price} is optional: without it the notional rule cannot be evaluated and is skipped. */
+    /**
+     * {@code price} is the order's worst-case execution price (limit / stop / current market price, chosen
+     * by the caller) and is required: every order's notional is checked.
+     */
     public record RiskCheckRequest(
             @NotBlank @Pattern(regexp = "^[A-Z]{1,10}$") String symbol,
             @NotNull Side side,
             @NotNull @Positive @Digits(integer = 15, fraction = 4) BigDecimal quantity,
-            @Positive @Digits(integer = 15, fraction = 4) BigDecimal price) {
+            @NotNull @Positive @Digits(integer = 15, fraction = 4) BigDecimal price) {
     }
 
     public record RiskCheckResponse(boolean allowed, String reason) {
