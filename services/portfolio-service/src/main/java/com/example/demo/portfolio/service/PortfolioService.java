@@ -52,10 +52,7 @@ public class PortfolioService {
 
     @Transactional
     public void applyPrice(PriceMessage price) {
-        // A tick marks the symbol for every owner that holds it.
-        repository.findBySymbol(price.symbol()).forEach(position -> {
-            position.setMarketPrice(Money.of(price.price()));
-            repository.save(position);
-        });
+        // A tick marks the symbol for every owner that holds it, updating only market_price (see markToMarket).
+        repository.markToMarket(price.symbol(), Money.of(price.price()));
     }
 }

@@ -9,6 +9,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /** A position is held by one {@code owner} for one {@code symbol} — the two together are the key. */
 @Entity
@@ -28,8 +29,16 @@ public class PositionEntity {
     @Column(name = "avg_price", nullable = false)
     private Money avgPrice;
 
-    @Column(name = "market_price")
+    // Owned by the price-tick path (PositionRepository.markToMarket, a targeted UPDATE). updatable = false
+    // keeps a fill's save of the whole row from writing back a market price it read before a newer tick.
+    @Column(name = "market_price", updatable = false)
     private Money marketPrice;
+
+    // Optimistic locking: a concurrent read-modify-write of the same position fails loudly
+    // (ObjectOptimisticLockingFailureException) instead of silently losing the other update.
+    @Version
+    @Column(nullable = false)
+    private long version;
 
     protected PositionEntity() {
         // for JPA
@@ -69,10 +78,6 @@ public class PositionEntity {
 
     public void setAvgPrice(Money avgPrice) {
         this.avgPrice = avgPrice;
-    }
-
-    public void setMarketPrice(Money marketPrice) {
-        this.marketPrice = marketPrice;
     }
 
     /** Unrealized P&L at the last mark; zero until the first price tick marks the position. */
