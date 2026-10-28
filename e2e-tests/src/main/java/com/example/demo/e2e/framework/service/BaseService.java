@@ -10,6 +10,7 @@ import com.example.demo.e2e.framework.config.Config;
 import com.example.demo.e2e.framework.http.ApiRequest;
 import com.example.demo.e2e.framework.http.ApiResponse;
 import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.e2e.framework.http.RawBody;
 import com.example.demo.e2e.framework.logging.TestLog;
 
 import io.restassured.RestAssured;
@@ -63,7 +64,7 @@ public abstract class BaseService {
             spec.header("Authorization", "Bearer " + request.token());
         }
         if (request.body() != null) {
-            spec.contentType("application/json").body(Json.write(request.body()));
+            spec.contentType("application/json").body(payload(request.body()));
         }
 
         long start = System.nanoTime();
@@ -80,6 +81,14 @@ public abstract class BaseService {
                 Map.copyOf(headers),
                 Map.copyOf(raw.getCookies()),
                 durationMs);
+    }
+
+    /** A {@link RawBody} is sent verbatim; any other body is a DTO serialized to JSON. */
+    private static String payload(Object body) {
+        if (body instanceof RawBody raw) {
+            return raw.json();
+        }
+        return Json.write(body);
     }
 
     private static String resolvePath(ApiRequest request) {
@@ -104,7 +113,7 @@ public abstract class BaseService {
     }
 
     private static void logRequest(String displayUrl, ApiRequest request) {
-        String body = request.body() == null ? "<none>" : Json.write(request.body());
+        String body = request.body() == null ? "<none>" : payload(request.body());
         String message = """
                 → %s %s
                   headers : %s

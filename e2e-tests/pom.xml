@@ -125,6 +125,7 @@
                     <rulesets>
                         <ruleset>${project.basedir}/../build/pmd/test-conventions.xml</ruleset>
                         <ruleset>${project.basedir}/../build/pmd/no-magic-values.xml</ruleset>
+                        <ruleset>${project.basedir}/../build/pmd/no-raw-json.xml</ruleset>
                     </rulesets>
                 </configuration>
             </plugin>

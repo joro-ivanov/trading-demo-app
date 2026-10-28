@@ -5,13 +5,13 @@ import static com.example.demo.auth.it.harness.AuthFixtures.LOGIN;
 import static com.example.demo.auth.it.harness.AuthFixtures.REGISTER;
 import static com.example.demo.auth.it.harness.AuthFixtures.TOKEN_TTL_SECONDS;
 import static com.example.demo.auth.it.harness.AuthFixtures.emailOf;
-import static com.example.demo.auth.it.harness.AuthFixtures.loginBody;
-import static com.example.demo.auth.it.harness.AuthFixtures.registerBody;
+import static com.example.demo.auth.it.harness.AuthFixtures.loginRequest;
+import static com.example.demo.auth.it.harness.AuthFixtures.registerRequest;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpStatus;
 
 import com.example.demo.auth.it.harness.AuthITBase;
@@ -35,7 +35,7 @@ class RegisterIT extends AuthITBase {
     @Test
     void registerCreatesUserAndReturnsToken() {
         String body = api()
-                .body(registerBody(NEW_USER, emailOf(NEW_USER), VALID_PASSWORD))
+                .body(registerRequest(NEW_USER, emailOf(NEW_USER), VALID_PASSWORD))
                 .post(REGISTER)
                 .then().statusCode(HttpStatus.CREATED.value())
                 .extract().asString();
@@ -50,12 +50,12 @@ class RegisterIT extends AuthITBase {
     @Test
     void registeredUserCanThenLogIn() {
         api()
-                .body(registerBody(RETURNING_USER, emailOf(RETURNING_USER), VALID_PASSWORD))
+                .body(registerRequest(RETURNING_USER, emailOf(RETURNING_USER), VALID_PASSWORD))
                 .post(REGISTER)
                 .then().statusCode(HttpStatus.CREATED.value());
 
         String body = api()
-                .body(loginBody(RETURNING_USER, VALID_PASSWORD))
+                .body(loginRequest(RETURNING_USER, VALID_PASSWORD))
                 .post(LOGIN)
                 .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
@@ -70,12 +70,12 @@ class RegisterIT extends AuthITBase {
     @Test
     void duplicateUsernameIsConflict() {
         api()
-                .body(registerBody(DUPLICATE_USERNAME, emailOf(DUPLICATE_USERNAME), VALID_PASSWORD))
+                .body(registerRequest(DUPLICATE_USERNAME, emailOf(DUPLICATE_USERNAME), VALID_PASSWORD))
                 .post(REGISTER)
                 .then().statusCode(HttpStatus.CREATED.value());
 
         api()
-                .body(registerBody(DUPLICATE_USERNAME, emailOf(SECOND_EMAIL_FOR_DUPLICATE_USERNAME), VALID_PASSWORD))
+                .body(registerRequest(DUPLICATE_USERNAME, emailOf(SECOND_EMAIL_FOR_DUPLICATE_USERNAME), VALID_PASSWORD))
                 .post(REGISTER)
                 .then().statusCode(HttpStatus.CONFLICT.value());
     }
@@ -83,12 +83,12 @@ class RegisterIT extends AuthITBase {
     @Test
     void duplicateEmailIsConflict() {
         api()
-                .body(registerBody(FIRST_OWNER_OF_SHARED_EMAIL, emailOf(SHARED_EMAIL), VALID_PASSWORD))
+                .body(registerRequest(FIRST_OWNER_OF_SHARED_EMAIL, emailOf(SHARED_EMAIL), VALID_PASSWORD))
                 .post(REGISTER)
                 .then().statusCode(HttpStatus.CREATED.value());
 
         api()
-                .body(registerBody(SECOND_OWNER_OF_SHARED_EMAIL, emailOf(SHARED_EMAIL), VALID_PASSWORD))
+                .body(registerRequest(SECOND_OWNER_OF_SHARED_EMAIL, emailOf(SHARED_EMAIL), VALID_PASSWORD))
                 .post(REGISTER)
                 .then().statusCode(HttpStatus.CONFLICT.value());
     }
@@ -97,28 +97,28 @@ class RegisterIT extends AuthITBase {
     @Test
     void registeringSeededUsernameIsConflict() {
         api()
-                .body(registerBody(ALICE.username(), emailOf(NEW_EMAIL_FOR_SEEDED_USERNAME), VALID_PASSWORD))
+                .body(registerRequest(ALICE.username(), emailOf(NEW_EMAIL_FOR_SEEDED_USERNAME), VALID_PASSWORD))
                 .post(REGISTER)
                 .then().statusCode(HttpStatus.CONFLICT.value());
     }
 
     // EP/BVA invalid partitions: blank/short/too-long/bad-pattern username, bad/blank email, short/blank
     // password. Each fails bean validation -> 400.
-    @ParameterizedTest(name = "invalid registration -> 400: {0}")
-    @ValueSource(strings = {
-        "{\"username\":\"\",\"email\":\"a@b.com\",\"password\":\"s3cret-pw\"}",
-        "{\"username\":\"ab\",\"email\":\"a@b.com\",\"password\":\"s3cret-pw\"}",
-        "{\"username\":\"this_username_is_way_too_long\",\"email\":\"a@b.com\",\"password\":\"s3cret-pw\"}",
-        "{\"username\":\"bad name\",\"email\":\"a@b.com\",\"password\":\"s3cret-pw\"}",
-        "{\"username\":\"bad-hyphen\",\"email\":\"a@b.com\",\"password\":\"s3cret-pw\"}",
-        "{\"username\":\"good\",\"email\":\"not-an-email\",\"password\":\"s3cret-pw\"}",
-        "{\"username\":\"good\",\"email\":\"\",\"password\":\"s3cret-pw\"}",
-        "{\"username\":\"good\",\"email\":\"a@b.com\",\"password\":\"short\"}",
-        "{\"username\":\"good\",\"email\":\"a@b.com\",\"password\":\"\"}"
+    @ParameterizedTest(name = "invalid registration -> 400: username={0}, email={1}, password={2}")
+    @CsvSource({
+        "'', a@b.com, s3cret-pw",
+        "ab, a@b.com, s3cret-pw",
+        "this_username_is_way_too_long, a@b.com, s3cret-pw",
+        "'bad name', a@b.com, s3cret-pw",
+        "bad-hyphen, a@b.com, s3cret-pw",
+        "good, not-an-email, s3cret-pw",
+        "good, '', s3cret-pw",
+        "good, a@b.com, short",
+        "good, a@b.com, ''"
     })
-    void rejectsInvalidRegistrationWith400(String body) {
+    void rejectsInvalidRegistrationWith400(String username, String email, String password) {
         api()
-                .body(body)
+                .body(registerRequest(username, email, password))
                 .post(REGISTER)
                 .then().statusCode(HttpStatus.BAD_REQUEST.value());
     }

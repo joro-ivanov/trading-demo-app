@@ -12,7 +12,8 @@ import com.example.demo.order.domain.OrderStatus;
 import com.example.demo.order.domain.Side;
 import com.example.demo.order.it.harness.ApiError;
 import com.example.demo.order.it.harness.OrderITBase;
-import com.example.demo.order.it.harness.OrderJson;
+import com.example.demo.order.it.harness.OrderRequest;
+import com.example.demo.order.it.harness.Orders;
 import com.example.demo.order.it.harness.OrderMessages;
 import com.example.demo.order.web.OrderResponse;
 
@@ -28,7 +29,7 @@ class CancelOrderIT extends OrderITBase {
     private static final String ORDER_NOT_FOUND = "Order not found: ";
     private static final String FILLED_CANNOT_BE_CANCELLED = "Filled orders cannot be cancelled: ";
 
-    private static final String BUY_ORDER = OrderJson.market(SYMBOL, Side.BUY.name(), QUANTITY);
+    private static final OrderRequest BUY_ORDER = Orders.market(SYMBOL, Side.BUY.name(), QUANTITY);
 
     @Test
     void cancelLiveOrderTransitionsToCancelled() {
@@ -86,7 +87,7 @@ class CancelOrderIT extends OrderITBase {
 
     @Test
     void aPendingOrderCanBeCancelled() {
-        String id = place(TESTER, OrderJson.limit(SYMBOL, Side.BUY.name(), QUANTITY, NON_MARKETABLE_LIMIT)).id();
+        String id = place(TESTER, Orders.limit(SYMBOL, Side.BUY.name(), QUANTITY, NON_MARKETABLE_LIMIT)).id();
         KAFKA_PROBE.send(OrderMessages.RESTING, id, OrderMessages.resting(id));
         await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(statusOf(id)).isEqualTo(OrderStatus.PENDING));

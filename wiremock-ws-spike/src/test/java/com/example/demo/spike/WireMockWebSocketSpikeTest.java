@@ -9,6 +9,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.sendMessage;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.common.Json;
 
 /**
  * M0 spike (docs/DESIGN.md §9) — proves WireMock 4 beta WebSocket mocking is viable for the
@@ -48,13 +50,14 @@ class WireMockWebSocketSpikeTest {
     private static final String GREETING = "hello";
     private static final String ECHO_REPLY = "world";
 
+    private static final String SYMBOL = "AAPL";
     private static final String PRICE_FEED_STUB = "price-feed";
     private static final String MALFORMED_FEED_STUB = "malformed feed";
     private static final String KNOWN_FEED_STUB = "known feed";
-    private static final String SUBSCRIBE_AAPL = "subscribe:AAPL";
+    private static final String SUBSCRIBE_AAPL = "subscribe:" + SYMBOL;
     private static final String SUBSCRIBE_UNKNOWN = "subscribe:UNKNOWN";
-    private static final String FIRST_TICK = "{\"symbol\":\"AAPL\",\"price\":190.10}";
-    private static final String SECOND_TICK = "{\"symbol\":\"AAPL\",\"price\":190.40}";
+    private static final PriceTick FIRST_TICK = new PriceTick(SYMBOL, new BigDecimal("190.10"));
+    private static final PriceTick SECOND_TICK = new PriceTick(SYMBOL, new BigDecimal("190.40"));
     private static final String MALFORMED_FRAME = "}{not-json";
     private static final String ANY_PRICE_FRAME = "price";
 
@@ -98,8 +101,8 @@ class WireMockWebSocketSpikeTest {
                 .withName(PRICE_FEED_STUB)
                 .withBody(equalTo(SUBSCRIBE_AAPL))
                 .willTriggerActions(
-                        sendMessage(FIRST_TICK).onOriginatingChannel(),
-                        sendMessage(SECOND_TICK).onOriginatingChannel()));
+                        sendMessage(Json.write(FIRST_TICK)).onOriginatingChannel(),
+                        sendMessage(Json.write(SECOND_TICK)).onOriginatingChannel()));
 
         CapturingClient client = connect(MARKET_DATA_PATH);
         client.send(SUBSCRIBE_AAPL);
@@ -107,11 +110,12 @@ class WireMockWebSocketSpikeTest {
         String second = client.frames.poll(FRAME_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         client.closeBlocking();
 
-        assertThat(first).isEqualTo(FIRST_TICK);
-        assertThat(second).isEqualTo(SECOND_TICK);
+        assertThat(Json.read(first, PriceTick.class)).isEqualTo(FIRST_TICK);
+        assertThat(Json.read(second, PriceTick.class)).isEqualTo(SECOND_TICK);
     }
 
     @Test
+    @RawJsonPayload(reason = "a syntactically broken feed frame, which no PriceTick can serialize to")
     void injectsAMalformedFrameForResilienceTesting() throws Exception {
         messageStubFor(message()
                 .withName(MALFORMED_FEED_STUB)

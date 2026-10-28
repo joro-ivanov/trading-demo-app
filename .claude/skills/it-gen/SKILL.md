@@ -95,7 +95,7 @@ For each service, after its writer reports:
    grouped by root cause, with counts per run and per test class. It filters nothing. A finding that
    appears in only some runs is a nondeterminism signal. `unhandledHttp500: true` means the service answered
    500, which is always a product defect (conventions.md, "HTTP 500 is never expected").
-3. **No-logic lint**:
+3. **No-logic lint** (also flags magic values, weak assertions and hand-written JSON outside `@RawJsonPayload`):
    ```bash
    java .claude/skills/it-gen/scripts/TestLint.java <each in-scope IT class path>
    ```

@@ -9,7 +9,7 @@ grouped (`group` field) so the writer turns them into one `@ParameterizedTest`.
 | # | Category | Cases to derive |
 |---|---|---|
 | H1 | Happy path | Each distinct success shape: exact status (200/201/204), **full** body, `Location` header if set, persisted rows, emitted Kafka events, outbound calls (WireMock `verify` with body). |
-| H2 | Request validation | For **each** field: missing, `null`, blank, wrong type, below/above range, boundary −1/exact/+1, unknown enum value, too long. Also malformed JSON, empty body, wrong `Content-Type`, unknown/duplicate fields if the DTO rejects them. Path/query params: missing, malformed (non-UUID id), out of range. → 400 + error body. |
+| H2 | Request validation | For **each** field: missing, `null`, blank, wrong type, below/above range, boundary −1/exact/+1, unknown enum value, too long. Also malformed JSON, empty body, wrong `Content-Type`, unknown/duplicate fields if the DTO rejects them. Path/query params: missing, malformed (non-UUID id), out of range. → 400 + error body.  Cases a DTO cannot express (wrong JSON type, missing vs `null`, malformed JSON) are `@RawJsonPayload(reason)` tests; all others send DTOs. |
 | H3 | Missing data | Unknown id → 404; resource of another user (no existence leak → 404 or 403, whatever the code does); empty collections → 200 `[]`. |
 | H4 | Wrong data / business rules | Domain rejections with their exact status (409/422/400): insufficient funds/holdings, invalid state transition (cancel a FILLED order), duplicate registration, wrong credentials. |
 | H5 | Authentication | No `Authorization` header; `Bearer` with empty token; malformed token; wrong signature (different secret); expired (`Jwt.issue(sub, SECRET, -60)`); not-yet-valid; wrong scheme (`Basic …`); token for a deleted/unknown user if the service checks. → 401 + JSON error body. Public endpoints (`/auth/login`, `/auth/register`) must work **without** a token. |
@@ -26,7 +26,7 @@ grouped (`group` field) so the writer turns them into one `@ParameterizedTest`.
 | # | Category | Cases |
 |---|---|---|
 | K1 | Valid message | Exact resulting DB state / outbound event / WS push. |
-| K2 | Malformed payload | Invalid JSON, missing required field, wrong type. The service must not crash and later valid messages are still processed. |
+| K2 | Malformed payload | Invalid JSON, missing required field, wrong type. The service must not crash and later valid messages are still processed.  Sent via the harness `@RawJsonPayload` raw sender from an annotated test. |
 | K3 | Unknown reference | e.g. a fill for an unknown order id. |
 | K4 | Duplicate / out-of-order | The same fill twice; resting after filled. |
 | K5 | Contract | The payload shape the **producer** actually sends (read the producer's record, e.g. `marketdata/match/FillEvent.java`). |
@@ -37,7 +37,7 @@ grouped (`group` field) so the writer turns them into one `@ParameterizedTest`.
 |---|---|---|
 | W1 | Handshake auth | Valid token, missing, invalid, expired. |
 | W2 | Push | Each event type reaches the right subscriber only (another user's fill is not pushed). |
-| W3 | Feed faults | Malformed frame, silence/no match, disconnect. |
+| W3 | Feed faults | Malformed frame, silence/no match, disconnect.  Malformed frames via an annotated raw sender. |
 
 ## Matrix entry format
 

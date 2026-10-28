@@ -9,7 +9,6 @@ import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
-import com.example.demo.common.json.Json;
 import com.example.demo.portfolio.it.harness.PortfolioITBase;
 import com.example.demo.portfolio.web.HoldingResponse;
 
@@ -27,12 +26,11 @@ class HoldingsIT extends PortfolioITBase {
         await().atMost(WAIT).untilAsserted(() ->
                 assertThat(position(HELD_SYMBOL).quantity()).isEqualByComparingTo(HELD_QUANTITY));
 
-        String body = api(TOKEN)
+        HoldingResponse holding = api(TOKEN)
                 .get(HOLDINGS_PATH, HELD_SYMBOL)
                 .then().statusCode(HttpStatus.OK.value())
-                .extract().asString();
+                .extract().as(HoldingResponse.class);
 
-        HoldingResponse holding = Json.read(body, HoldingResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(holding.symbol()).isEqualTo(HELD_SYMBOL);
             softly.assertThat(holding.quantity()).isEqualByComparingTo(HELD_QUANTITY);
@@ -41,12 +39,11 @@ class HoldingsIT extends PortfolioITBase {
 
     @Test
     void holdingsEndpointReturnsZeroForUnknownSymbol() {
-        String body = api(TOKEN)
+        HoldingResponse holding = api(TOKEN)
                 .get(HOLDINGS_PATH, UNKNOWN_SYMBOL)
                 .then().statusCode(HttpStatus.OK.value())
-                .extract().asString();
+                .extract().as(HoldingResponse.class);
 
-        HoldingResponse holding = Json.read(body, HoldingResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(holding.symbol()).isEqualTo(UNKNOWN_SYMBOL);
             softly.assertThat(holding.quantity()).isEqualByComparingTo(BigDecimal.ZERO);

@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,7 +34,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
+import com.example.demo.common.json.Json;
+import com.example.demo.marketdata.model.PriceTick;
+import com.example.demo.order.domain.Side;
+import com.example.demo.order.exchange.ExchangeAck;
 import com.example.demo.order.web.OrderResponse;
+import com.example.demo.order.web.PlaceOrderRequest;
+import com.example.demo.portfolio.web.FundsDtos.FundsRequest;
 import com.example.demo.portfolio.web.FillResponse;
 import com.example.demo.portfolio.web.PositionResponse;
 
@@ -71,13 +78,15 @@ class OrderToPortfolioFlowIT {
 
     // The exchange (WireMock): REST order routing and the raw-WS price feed.
     private static final String EXCHANGE_ORDERS_PATH = "/exchange/orders";
-    private static final String EXCHANGE_ACK = "{\"status\":\"ACCEPTED\",\"exchangeOrderId\":\"EX-1\"}";
+    private static final String ACCEPTED = "ACCEPTED";
+    private static final String EXCHANGE_ORDER_ID = "EX-1";
+    private static final ExchangeAck EXCHANGE_ACK = new ExchangeAck(ACCEPTED, EXCHANGE_ORDER_ID);
     private static final String EXCHANGE_FEED_PATH = "/exchange/marketdata";
     private static final String FEED_STUB_NAME = "AAPL feed";
     private static final String SYMBOL = "AAPL";
     private static final String SUBSCRIBE_FRAME = "subscribe:" + SYMBOL;
     private static final String FEED_PRICE = "190.40";
-    private static final String FEED_TICK = "{\"symbol\":\"" + SYMBOL + "\",\"price\":" + FEED_PRICE + "}";
+    private static final PriceTick FEED_TICK = new PriceTick(SYMBOL, new BigDecimal(FEED_PRICE));
 
     // Service jars (system properties set by the pom) and their process logs.
     private static final String MARKET_DATA_JAR = "marketdata.jar";
@@ -98,12 +107,7 @@ class OrderToPortfolioFlowIT {
     private static final String FILLS_QUEUE = "/user/queue/fills";
 
     // The order under test and its expected outcome.
-    private static final String AMOUNT_FIELD = "amount";
     private static final int DEPOSIT_AMOUNT = 100000;
-    private static final String SYMBOL_FIELD = "symbol";
-    private static final String SIDE_FIELD = "side";
-    private static final String QUANTITY_FIELD = "quantity";
-    private static final String BUY = "BUY";
     private static final int ORDER_QUANTITY = 10;
     private static final int OK = 200;
     private static final int CREATED = 201;
@@ -164,12 +168,12 @@ class OrderToPortfolioFlowIT {
     static void startStack() {
         EXCHANGE_REST.start();
         EXCHANGE_WS.start();
-        EXCHANGE_REST.stubFor(post(EXCHANGE_ORDERS_PATH).willReturn(okJson(EXCHANGE_ACK)));
+        EXCHANGE_REST.stubFor(post(EXCHANGE_ORDERS_PATH).willReturn(okJson(Json.write(EXCHANGE_ACK))));
         configureFor(LOCALHOST, EXCHANGE_WS.port());
         messageStubFor(message()
                 .withName(FEED_STUB_NAME)
                 .withBody(WireMock.equalTo(SUBSCRIBE_FRAME))
-                .willTriggerActions(sendMessage(FEED_TICK).onOriginatingChannel()));
+                .willTriggerActions(sendMessage(Json.write(FEED_TICK)).onOriginatingChannel()));
 
         String kafka = KAFKA.getBootstrapServers();
         orderPort = Stack.freePort();
@@ -204,11 +208,11 @@ class OrderToPortfolioFlowIT {
         StompSession session = Stack.subscribe(notificationPort, FILLS_QUEUE, TOKEN, fills);
 
         // tester has no seeded cash — fund the account so the BUY passes the pre-trade funds guard.
-        Stack.post(portfolioPort, TOKEN, DEPOSIT_PATH, Map.of(AMOUNT_FIELD, DEPOSIT_AMOUNT), OK);
+        Stack.post(portfolioPort, TOKEN, DEPOSIT_PATH, new FundsRequest(BigDecimal.valueOf(DEPOSIT_AMOUNT)), OK);
 
         OrderResponse order = Stack.post(orderPort, TOKEN, ORDERS_PATH,
-                Map.of(SYMBOL_FIELD, SYMBOL, SIDE_FIELD, BUY, QUANTITY_FIELD, ORDER_QUANTITY), CREATED,
-                OrderResponse.class);
+                new PlaceOrderRequest(SYMBOL, Side.BUY, BigDecimal.valueOf(ORDER_QUANTITY), null, null, null),
+                CREATED, OrderResponse.class);
         assertThat(order.status()).isEqualTo(SUBMITTED);
 
         await().atMost(FLOW_TIMEOUT).untilAsserted(() -> {

@@ -23,12 +23,14 @@ decimal. Done = **score ≥ 9.0 and zero blocking issues**.
 | Production code (`src/main`) changed by the writer | 0 |
 | Out-of-scope test class modified | 6 |
 | A test expecting HTTP 500 (PMD `NoInternalServerError`, ArchUnit, TestLint) | 4 |
+| JSON built or read by hand outside `@RawJsonPayload` (JSON string literal, string-compared JSON, JsonPath, `JsonNode`, `readTree`, `body("path", matcher)`, raw `body(String)`), or `@RawJsonPayload` on a scenario that is not an invalid-payload case | 0 |
 | A failure hidden without a user decision (expected value switched to observed, assertion loosened or removed, case deleted, `@Disabled`, rule suppression, gate-config edit, `src/main` change) | 0 |
 
 ## Always blocking (even when the score is ≥ 9)
 
 - A `must` case from the matrix is missing.
 - Data-only duplicates that should be one `@ParameterizedTest`.
+- A `@RawJsonPayload` whose `reason` doesn't name the payload a DTO cannot express.
 - A magic value in a test (PMD `NoMagicValuesInTests` / TestLint), or a constant whose name only echoes its
   value (`TEN = 10`, `S_201`) instead of saying what it means.
 - An expected value that contradicts the code (the reviewer must cite the code line).

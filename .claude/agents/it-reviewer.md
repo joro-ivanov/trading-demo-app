@@ -25,7 +25,8 @@ Read first: `.claude/skills/it-gen/rubric.md` (how to score) and
 2. For each matrix case, find the test that implements it and check that its assertions match the
    case's `then`. Open the production code at the case's `source` when an expected value looks
    suspicious. A wrong expectation is blocking, and you must cite the code line.
-3. Read every test method looking for: logic in tests, magic values and constants whose names
+3. Read every test method looking for: logic in tests, hand-built or hand-read JSON outside
+   `@RawJsonPayload` (and the annotation used on a scenario that is not an invalid payload: hard cap 0), magic values and constants whose names
    only echo their value (`TEN = 10`, which PMD can't judge, so you must), more than one scenario per test, data-only
    duplicates, weak assertions, hidden nondeterminism (current time, shared users/ids, order
    dependence, missing `atMost`, consumer groups reused), and internal mocking. A slow-dependency

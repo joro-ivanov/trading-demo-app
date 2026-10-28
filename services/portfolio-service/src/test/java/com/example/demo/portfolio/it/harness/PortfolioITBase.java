@@ -17,9 +17,12 @@ import com.example.demo.common.json.Json;
 import com.example.demo.common.security.Jwt;
 import com.example.demo.portfolio.web.FillResponse;
 import com.example.demo.portfolio.web.FundsDtos.BalanceResponse;
+import com.example.demo.portfolio.web.FundsDtos.FundsRequest;
 import com.example.demo.portfolio.web.PositionResponse;
 
 import io.restassured.RestAssured;
+import io.restassured.config.ObjectMapperConfig;
+import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
 
@@ -45,6 +48,9 @@ public abstract class PortfolioITBase {
     protected static final String DEPOSIT_PATH = "/funds/deposit";
     protected static final String WITHDRAW_PATH = "/funds/withdraw";
     protected static final String HOLDINGS_PATH = "/portfolio/holdings/{symbol}";
+    /** REST-Assured (de)serializes request and response DTOs with the project's {@code Json}. */
+    private static final RestAssuredConfig DTO_CONFIG = RestAssuredConfig.config()
+            .objectMapperConfig(new ObjectMapperConfig(new JsonObjectMapper()));
 
     @SuppressWarnings("resource")
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine")
@@ -78,6 +84,7 @@ public abstract class PortfolioITBase {
         return RestAssured.given()
                 .baseUri("http://localhost")
                 .port(port)
+                .config(DTO_CONFIG)
                 .contentType(ContentType.JSON);
     }
 
@@ -118,17 +125,16 @@ public abstract class PortfolioITBase {
 
     /** {@code GET /funds/balance} cash for the token's owner (expects 200). */
     protected BigDecimal balanceCash(String token) {
-        String body = api(token).get("/funds/balance").then().statusCode(200).extract().asString();
-        return Json.read(body, BalanceResponse.class).cash();
+        return api(token).get("/funds/balance").then().statusCode(200).extract().as(BalanceResponse.class).cash();
     }
 
-    /** The {@code {"amount": …}} body of a deposit or withdrawal. */
-    protected static String amountBody(String amount) {
-        return "{\"amount\":" + amount + "}";
+    /** The request of a deposit or withdrawal. */
+    protected static FundsRequest amount(String amount) {
+        return new FundsRequest(new BigDecimal(amount));
     }
 
     /** {@code POST /funds/deposit} (expects 200). */
     protected void deposit(String token, String amount) {
-        api(token).body(amountBody(amount)).post(DEPOSIT_PATH).then().statusCode(200);
+        api(token).body(amount(amount)).post(DEPOSIT_PATH).then().statusCode(200);
     }
 }

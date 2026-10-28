@@ -122,8 +122,8 @@ Methods are `static`, return `ApiResponse`, **no validation** (negative cases mu
   `neverProduceInternalServerError` checks the same on production bytecode.
 - PMD `build/pmd/no-magic-values.xml` (all test code, every module) bans **magic values**. Name every
   string and number: a semantic constant (`ORDER_QUANTITY`, not `TEN`), a local variable, or an
-  annotation data table (`@CsvSource`). JSON bodies shared across a service's ITs go into
-  `harness/` builders. Allowed inline: `0`, `1`, `""`, and description prose (`Allure.step`,
+  annotation data table (`@CsvSource`). DTO factories shared across a
+  service's ITs go into `harness/`. Allowed inline: `0`, `1`, `""`, and description prose (`Allure.step`,
   assertion descriptions, `AssertionError` messages).
 - ArchUnit `<Module>TestAssertionsArchitectureTest` (generated from one template into every backend
   module: the services, common, integration-tests and wiremock-ws-spike) forbids **weak or
@@ -133,6 +133,14 @@ Methods are `static`, return `ApiResponse`, **no validation** (negative cases mu
     `isGreaterThan`, `isBetween`, `isCloseTo`, `isAfter`, `isNotNull`, `isNotBlank`, `isNotEmpty`, `isNotEqualTo`, …)
   - the Hamcrest equivalents in REST-Assured `body(...)`
   - WireMock `containing`/`matching`
+- **DTOs only.** Tests (harness, stubs and the e2e framework included) send DTOs/records and assert on
+  deserialized objects. JSON-looking string literals fail PMD `build/pmd/no-raw-json.xml`; JsonPath,
+  `JsonNode`, `readTree`, REST-Assured `body("path", matcher)`, WireMock `matchingJsonPath` and raw
+  `body(String)` fail ArchUnit (`testsNeverReadRawJson`, `rawPayloadsOnlyFromAnnotatedMethods`; e2e:
+  `E2eArchitectureTest`). The only exception is a method annotated `@RawJsonPayload(reason = "…")`: a
+  negative test whose payload no DTO can express (wrong JSON type, missing vs `null`, broken JSON, a
+  malformed Kafka/WS message), or a harness/framework raw sender that only such tests may call. The
+  annotation itself is allowed only on test methods and in `harness`/the e2e framework.
 
   Assert exact values instead (`isEqualTo`, `containsExactly[InAnyOrder]`, `isEqualByComparingTo`,
   `isEmpty`, `equalToJson`), and make the data deterministic:

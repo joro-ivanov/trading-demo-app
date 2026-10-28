@@ -15,7 +15,7 @@ import org.springframework.http.HttpStatus;
 import com.example.demo.common.json.Json;
 import com.example.demo.order.domain.Side;
 import com.example.demo.order.it.harness.OrderITBase;
-import com.example.demo.order.it.harness.OrderJson;
+import com.example.demo.order.it.harness.Orders;
 import com.example.demo.order.web.OrderResponse;
 
 /** {@code GET /orders/history}: the caller's own orders only. */
@@ -34,7 +34,7 @@ class OrderHistoryIT extends OrderITBase {
     @Test
     void orderHistoryIncludesAPlacedOrder() {
         String token = tokenFor(SINGLE_OWNER);
-        OrderResponse placed = place(token, OrderJson.market(ALICE_SYMBOL, Side.BUY.name(), SINGLE_QUANTITY));
+        OrderResponse placed = place(token, Orders.market(ALICE_SYMBOL, Side.BUY.name(), SINGLE_QUANTITY));
 
         String body = api(token).get(HISTORY_PATH)
                 .then().statusCode(HttpStatus.OK.value())
@@ -52,8 +52,8 @@ class OrderHistoryIT extends OrderITBase {
     void orderHistoryIsScopedToTheAuthenticatedUser() {
         String alice = tokenFor(ALICE_OWNER);
         String bob = tokenFor(BOB_OWNER);
-        OrderResponse aliceOrder = place(alice, OrderJson.market(ALICE_SYMBOL, Side.BUY.name(), ALICE_QUANTITY));
-        OrderResponse bobOrder = place(bob, OrderJson.market(BOB_SYMBOL, Side.BUY.name(), BOB_QUANTITY));
+        OrderResponse aliceOrder = place(alice, Orders.market(ALICE_SYMBOL, Side.BUY.name(), ALICE_QUANTITY));
+        OrderResponse bobOrder = place(bob, Orders.market(BOB_SYMBOL, Side.BUY.name(), BOB_QUANTITY));
 
         List<OrderResponse> aliceHistory = Json.readList(
                 api(alice).get(HISTORY_PATH).then().statusCode(HttpStatus.OK.value()).extract().asString(), OrderResponse.class);

@@ -3,7 +3,9 @@ package com.example.demo.notification.it.harness;
 import static org.awaitility.Awaitility.await;
 
 import java.lang.reflect.Type;
+import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -23,6 +25,7 @@ import org.springframework.web.socket.sockjs.client.SockJsClient;
 import org.springframework.web.socket.sockjs.client.Transport;
 import org.springframework.web.socket.sockjs.client.WebSocketTransport;
 
+import com.example.demo.common.json.Json;
 import com.example.demo.common.security.Jwt;
 
 /**
@@ -34,7 +37,8 @@ import com.example.demo.common.security.Jwt;
  * for SUBSCRIBE, and SUBSCRIBE is processed asynchronously on the inbound channel. So the subscribe
  * methods prove the subscription is live end to end: they keep producing a <em>sentinel</em> message
  * for that destination until one is delivered to the new subscription. Sentinel frames are filtered
- * out of {@link Frames} for good, so late sentinels never reach a test's assertions.
+ * out of {@link Frames} for good, so late sentinels never reach a test's assertions. Sentinels are event
+ * records serialized with {@code Json}; received frames are deserialized into the subscription's record type.
  */
 public final class StompProbe {
 
@@ -45,6 +49,10 @@ public final class StompProbe {
 
     /** Interval between sentinel messages while waiting for a subscription to become live. */
     private static final Duration SENTINEL_INTERVAL = Duration.ofMillis(300);
+    /** A price no real tick has, marking the readiness sentinel on a price topic. */
+    private static final BigDecimal SENTINEL_PRICE = BigDecimal.valueOf(-1);
+    /** The symbol of the readiness sentinel on the fills queue. */
+    private static final String SENTINEL_SYMBOL = "READY";
 
     private final int port;
     private final String secret;
@@ -83,22 +91,21 @@ public final class StompProbe {
     }
 
     /** Subscribes to {@code /topic/prices.<symbol>} and returns once the subscription is live. */
-    public Frames subscribeToPrices(StompSession session, String symbol) {
-        String sentinel = "{\"symbol\":\"" + symbol + "\",\"price\":-1}";
-        return subscribeWhenLive(session, "/topic/prices." + symbol, "price.ticks", symbol, sentinel);
+    public Frames<PriceTick> subscribeToPrices(StompSession session, String symbol) {
+        PriceTick sentinel = new PriceTick(symbol, SENTINEL_PRICE);
+        return subscribeWhenLive(session, "/topic/prices." + symbol, "price.ticks", symbol, sentinel, PriceTick.class);
     }
 
     /** Subscribes {@code owner}'s session to {@code /user/queue/fills} and returns once it is live. */
-    public Frames subscribeToFills(StompSession session, String owner) {
-        String sentinel = "{\"orderId\":\"readiness-" + owner + "\",\"symbol\":\"READY\",\"side\":\"BUY\","
-                + "\"quantity\":0,\"price\":0,\"owner\":\"" + owner + "\","
-                + "\"filledAt\":\"1970-01-01T00:00:00Z\",\"sequenceId\":0}";
-        return subscribeWhenLive(session, "/user/queue/fills", "fills", "READY", sentinel);
+    public Frames<FillEvent> subscribeToFills(StompSession session, String owner) {
+        FillEvent sentinel = new FillEvent("readiness-" + owner, SENTINEL_SYMBOL, "BUY", BigDecimal.ZERO, BigDecimal.ZERO,
+                owner, Instant.EPOCH, 0L);
+        return subscribeWhenLive(session, "/user/queue/fills", "fills", SENTINEL_SYMBOL, sentinel, FillEvent.class);
     }
 
-    private Frames subscribeWhenLive(StompSession session, String destination,
-                                     String topic, String key, String sentinel) {
-        Frames frames = new Frames(sentinel);
+    private <T> Frames<T> subscribeWhenLive(StompSession session, String destination,
+                                            String topic, String key, T sentinel, Class<T> type) {
+        Frames<T> frames = new Frames<>(Json.write(sentinel), type);
         session.subscribe(destination, frames);
         await("subscription to " + destination + " is live")
                 .atMost(FRAME_TIMEOUT)
@@ -120,19 +127,31 @@ public final class StompProbe {
         sessions.clear();
     }
 
-    /** The frames received on one subscription. */
-    public static final class Frames implements StompFrameHandler {
+    /** The frames received on one subscription, deserialized into {@code T}. */
+    public static final class Frames<T> implements StompFrameHandler {
 
         private final BlockingQueue<String> received = new LinkedBlockingQueue<>();
         private final String sentinel;
+        private final Class<T> type;
         private volatile boolean sentinelSeen;
 
-        Frames(String sentinel) {
+        Frames(String sentinel, Class<T> type) {
             this.sentinel = sentinel;
+            this.type = type;
         }
 
         /** The next frame, waiting up to {@link #FRAME_TIMEOUT}; fails the test if none arrives. */
-        public String awaitFrame() throws InterruptedException {
+        public T awaitFrame() throws InterruptedException {
+            return Json.read(pollFrame(), type);
+        }
+
+        /** The next frame exactly as received, for the byte-for-byte forwarding check. */
+        @RawJsonPayload(reason = "raw frame reader: proves the gateway forwards the Kafka payload byte for byte")
+        public String awaitRawFrame() throws InterruptedException {
+            return pollFrame();
+        }
+
+        private String pollFrame() throws InterruptedException {
             String frame = received.poll(FRAME_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
             if (frame == null) {
                 throw new AssertionError("No STOMP frame received within " + FRAME_TIMEOUT);
@@ -141,14 +160,14 @@ public final class StompProbe {
         }
 
         /** Every frame that arrives within {@code window} (empty when nothing does). */
-        public List<String> receivedWithin(Duration window) throws InterruptedException {
+        public List<T> receivedWithin(Duration window) throws InterruptedException {
             List<String> frames = new ArrayList<>();
             String first = received.poll(window.toMillis(), TimeUnit.MILLISECONDS);
             if (first != null) {
                 frames.add(first);
                 received.drainTo(frames);
             }
-            return frames;
+            return frames.stream().map(frame -> Json.read(frame, type)).toList();
         }
 
         @Override

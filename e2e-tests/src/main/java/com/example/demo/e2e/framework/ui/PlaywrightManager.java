@@ -24,6 +24,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 import com.example.demo.e2e.framework.config.Config;
+import com.example.demo.e2e.framework.http.Json;
 
 /**
  * Thread-local Playwright lifecycle owner. UI test fixtures pass the current {@link Page} from here
@@ -55,6 +56,7 @@ public final class PlaywrightManager {
             DockerImageName.parse("mcr.microsoft.com/playwright:v" + PLAYWRIGHT_VERSION + "-noble");
     private static final int PLAYWRIGHT_SERVER_PORT = 3000;
     private static final String PLAYWRIGHT_WS_PATH = "/playwright";
+    private static final String PLAYWRIGHT_SERVER_HOST = "0.0.0.0";
 
     private static final ThreadLocal<Playwright> PLAYWRIGHT = new ThreadLocal<>();
     private static final ThreadLocal<Browser> BROWSER = new ThreadLocal<>();
@@ -283,13 +285,9 @@ public final class PlaywrightManager {
     private static GenericContainer<?> browserContainer(Config config) {
         exposeHostUiPort(config);
         String browser = config.get("ui.browser", "chromium");
-        String launchConfig = """
-                {"port":%d,"host":"0.0.0.0","wsPath":"%s","headless":%s}
-                """.formatted(
-                PLAYWRIGHT_SERVER_PORT,
-                PLAYWRIGHT_WS_PATH,
-                Boolean.toString(config.getBoolean("ui.browser.headless", true)));
-        String command = "printf '%s' '" + launchConfig.trim() + "' >/tmp/playwright-launch.json"
+        String launchConfig = Json.write(new LaunchServerConfig(
+                PLAYWRIGHT_SERVER_PORT, PLAYWRIGHT_SERVER_HOST, PLAYWRIGHT_WS_PATH, config.getBoolean("ui.browser.headless", true)));
+        String command = "printf '%s' '" + launchConfig + "' >/tmp/playwright-launch.json"
                 + " && npx -y playwright@" + PLAYWRIGHT_VERSION + " launch-server --browser " + browser
                 + " --config /tmp/playwright-launch.json";
         Duration startupTimeout = config.getDuration("ui.testcontainers.startup-timeout", Duration.ofSeconds(30));
@@ -352,6 +350,10 @@ public final class PlaywrightManager {
             throw new IllegalStateException("playwright.version is missing from playwright.properties");
         }
         return version.trim();
+    }
+
+    /** {@code playwright launch-server --config} file contents. */
+    private record LaunchServerConfig(int port, String host, String wsPath, boolean headless) {
     }
 
     private record LaunchResult(Browser browser, GenericContainer<?> browserContainer) {

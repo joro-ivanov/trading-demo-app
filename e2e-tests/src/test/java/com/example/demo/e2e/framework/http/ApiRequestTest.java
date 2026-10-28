@@ -9,6 +9,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import com.example.demo.e2e.framework.model.LoginRequest;
+import com.example.demo.e2e.framework.support.RawJsonPayload;
+
 class ApiRequestTest {
 
     private static final String PATH = "/orders";
@@ -22,7 +25,10 @@ class ApiRequestTest {
     private static final String PATH_PARAM_VALUE = "9";
     private static final String COOKIE_NAME = "session";
     private static final String COOKIE_VALUE = "s1";
-    private static final String BODY = "payload";
+    private static final String USERNAME = "trader";
+    private static final String PASSWORD = "secret";
+    private static final LoginRequest BODY = new LoginRequest(USERNAME, PASSWORD);
+    private static final String HAND_WRITTEN_BODY = "payload";
     private static final String NEW_HEADER_NAME = "a";
     private static final String NEW_HEADER_VALUE = "b";
 
@@ -49,6 +55,24 @@ class ApiRequestTest {
             softly.assertThat(request.cookies()).containsExactly(entry(COOKIE_NAME, COOKIE_VALUE));
             softly.assertThat(request.body()).isEqualTo(BODY);
         });
+    }
+
+    @Test
+    void bodyRejectsAHandWrittenString() {
+        ApiRequest.Builder builder = ApiRequest.builder().method(HttpMethod.POST).path(PATH);
+
+        assertThatThrownBy(() -> builder.body(HAND_WRITTEN_BODY))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(ApiRequest.STRING_BODY_REJECTED);
+    }
+
+    @Test
+    @RawJsonPayload(reason = "verifies the raw-body opt-in itself: broken JSON must be kept verbatim, not serialized")
+    void rawBodyKeepsTheHandWrittenJsonVerbatim() {
+        String malformedJson = "{\"quantity\": }";
+        ApiRequest request = ApiRequest.builder().method(HttpMethod.POST).path(PATH).rawBody(malformedJson).build();
+
+        assertThat(request.body()).isEqualTo(new RawBody(malformedJson));
     }
 
     @Test

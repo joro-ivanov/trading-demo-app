@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<ruleset name="no-raw-json"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        Tests use DTOs: payloads are objects serialized when sent, and responses/messages are deserialized
+        into DTOs before asserting. Hand-written JSON (a string literal or text block that looks like JSON)
+        is allowed only inside a method annotated @RawJsonPayload(reason = ...), for negative scenarios a DTO
+        cannot express (wrong JSON type, missing-vs-null field, broken JSON, malformed message). Applies to
+        all test code, harness/ plumbing and the e2e framework; the services' and common's production code
+        is excluded.
+    </description>
+
+    <exclude-pattern>.*[/\\]services[/\\][^/\\]+[/\\]src[/\\]main[/\\].*</exclude-pattern>
+    <exclude-pattern>.*[/\\]common[/\\]src[/\\]main[/\\].*</exclude-pattern>
+
+    <rule name="NoRawJsonOutsideRawJsonPayload"
+          language="java"
+          message="Hand-written JSON: send/assert DTOs (Json.write / Json.read); raw JSON only in a @RawJsonPayload(reason) method"
+          class="net.sourceforge.pmd.lang.rule.xpath.XPathRule">
+        <description>
+            Flags a string literal or text block that looks like JSON - a quoted key followed by a colon, an
+            object start with a key ({"), or an array start followed by JSON ([{ [" [1) - unless an enclosing
+            method declaration carries @RawJsonPayload (its own annotation data tables count as inside it).
+            A lone brace and the empty "{}" / "[]" are not flagged: they are also SLF4J placeholders and
+            path templates, and carry no field a DTO could express.
+        </description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value><![CDATA[
+//StringLiteral
+    [matches(@Image, '\\"[A-Za-z_$][A-Za-z0-9_$]*\\"\s*:')
+     or matches(@Image, '^"""[\s\S]*"[A-Za-z_$][A-Za-z0-9_$]*"\s*:')
+     or matches(@Image, '^"\s*\{\s*\\"')
+     or matches(@Image, '^"""\s*\{\s*"')
+     or matches(@Image, '^"\s*\[\s*(\{|\\"|-?[0-9])')
+     or matches(@Image, '^"""\s*\[\s*(\{|"|-?[0-9])')]
+    [not(ancestor::MethodDeclaration[ModifierList/Annotation[@SimpleName = 'RawJsonPayload']])]
+                ]]></value>
+            </property>
+        </properties>
+    </rule>
+</ruleset>

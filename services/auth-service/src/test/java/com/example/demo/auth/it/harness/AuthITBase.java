@@ -20,6 +20,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import com.example.demo.common.security.Jwt;
 
 import io.restassured.RestAssured;
+import io.restassured.config.ObjectMapperConfig;
+import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
 
@@ -34,6 +36,10 @@ import io.restassured.specification.RequestSpecification;
 public abstract class AuthITBase {
 
     protected static final String SECRET = "demo-secret-demo-secret-demo-secret-1234";
+
+    /** Request DTOs are serialized with the project's {@code Json}, never hand-written. */
+    private static final RestAssuredConfig DTO_JSON = RestAssuredConfig.config()
+            .objectMapperConfig(new ObjectMapperConfig().defaultObjectMapper(new JsonObjectMapper()));
 
     @SuppressWarnings("resource")
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine")
@@ -62,11 +68,12 @@ public abstract class AuthITBase {
         jdbc.update("delete from users where id not in ('u1', 'u2', 'u3')");
     }
 
-    /** An unauthenticated JSON request to the running service. */
+    /** An unauthenticated JSON request to the running service; {@code .body(dto)} serializes with {@code Json}. */
     protected RequestSpecification api() {
         return RestAssured.given()
                 .baseUri("http://localhost")
                 .port(port)
+                .config(DTO_JSON)
                 .contentType(ContentType.JSON);
     }
 

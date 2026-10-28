@@ -403,9 +403,9 @@ catches what the others cannot:
 | Check | Looks at | Catches | Runs in |
 |---|---|---|---|
 | **Checkstyle** | source form | star / unused / redundant imports, one top-level class per file | `mvn verify` (fails the build) |
-| **PMD** | syntax tree | logic in tests: control statements everywhere; also `&&` `\|\|` `!` `==` `!=` and `forEach`/`filter`/`ifPresent` callbacks in the service modules; magic values (unnamed strings/numbers) in every test; producing or expecting HTTP 500 in the backend | `mvn verify` (fails the build) |
-| **ArchUnit** | compiled classes and calls | layering, no field injection or `java.util.Date`; in ITs no Mockito, `*IT` in the `it` package, no weak assertions | `mvn test` (unit tests, fails the build) |
-| **TestLint** | source text (regex) | a fast approximation of the PMD and ArchUnit test rules, incl. magic values | `/it-gen` gate and on demand |
+| **PMD** | syntax tree | logic in tests: control statements everywhere; also `&&` `\|\|` `!` `==` `!=` and `forEach`/`filter`/`ifPresent` callbacks in the service modules; magic values (unnamed strings/numbers) and hand-written JSON literals in every test; producing or expecting HTTP 500 in the backend | `mvn verify` (fails the build) |
+| **ArchUnit** | compiled classes and calls | layering, no field injection or `java.util.Date`; in ITs no Mockito, `*IT` in the `it` package, no weak assertions; no JsonPath/`JsonNode`/raw `body(String)` outside `@RawJsonPayload` | `mvn test` (unit tests, fails the build) |
+| **TestLint** | source text (regex) | a fast approximation of the PMD and ArchUnit test rules, incl. magic values and hand-written JSON | `/it-gen` gate and on demand |
 
 - **Checkstyle** (`build/checkstyle/checkstyle.xml`) is a style checker. Here it only enforces import
   hygiene and one top-level class per file: cheap consistency that catches leftovers such as an
@@ -421,6 +421,10 @@ catches what the others cannot:
   annotation data table such as `@CsvSource`. `0`, `1`, `""` and description prose (`Allure.step`,
   assertion descriptions, `AssertionError` messages) are allowed inline. ArchUnit can't enforce this,
   because the compiler inlines constants into the bytecode.
+  `build/pmd/no-raw-json.xml` (all test code, harness and the e2e framework included) bans **hand-written
+  JSON**: tests send DTOs/records and assert on deserialized objects. A JSON-looking literal is allowed
+  only inside a method annotated `@RawJsonPayload(reason = "…")`, i.e. a negative test whose payload no
+  DTO can express (wrong JSON type, missing vs `null`, broken JSON, a malformed Kafka/WS message).
 - **ArchUnit** loads the compiled bytecode and checks dependencies and method calls as JUnit tests.
   It sees what source parsing can't: which class owns a called method, annotations on fields, and
   calls inside lambdas.
@@ -432,8 +436,13 @@ catches what the others cannot:
     assertions in *all* their tests: unit, ArchUnit and ITs. The banned calls are AssertJ
     `contains`/`isNotNull`/`isGreaterThan`…, Hamcrest `containsString`… and WireMock `containing`….
     e2e is excluded because it asserts live values on a running stack.
+    The same class forbids reading JSON by hand (JsonPath, `JsonNode`, `readTree`, REST-Assured
+    `body("path", matcher)`, WireMock `matchingJsonPath`) and allows a raw `body(String)` or a call to a
+    `@RawJsonPayload` raw sender only from a `@RawJsonPayload` method. The annotation itself may sit
+    only on test methods and in `harness` packages. `E2eArchitectureTest` enforces the same for e2e.
   - The e2e module has its own framework invariants: engine isolation, records, static service
-    methods, explicit `Page` constructors.
+    methods, explicit `Page` constructors, and every `@RunDuringMarketHours` method is also a `@Test` or
+    `@ParameterizedTest` (otherwise it would silently never run).
 - **TestLint** (`.claude/skills/it-gen/scripts/TestLint.java`) is a dependency-free, single-file Java
   script: `java TestLint.java <path>`. It returns `file:line` findings in under a second, with no Maven
   or Docker. The `/it-gen` workflow runs it after every writer round. PMD and ArchUnit remain the

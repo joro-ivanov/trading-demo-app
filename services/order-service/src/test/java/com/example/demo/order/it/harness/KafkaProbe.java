@@ -19,6 +19,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
+import com.example.demo.common.json.Json;
+
 /**
  * Kafka plumbing for the tests: produce a record, or read a topic from the beginning with a fresh
  * consumer group. All polling loops live here so the tests stay linear.
@@ -33,12 +35,13 @@ public final class KafkaProbe {
         this.bootstrapServers = bootstrapServers;
     }
 
-    public void send(String topic, String key, String payload) {
+    /** Publishes {@code event} serialized with the project's {@link Json}, as the real producers do. */
+    public void send(String topic, String key, Object event) {
         try (Producer<String, String> producer = new KafkaProducer<>(Map.of(
                 ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers,
                 ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class))) {
-            producer.send(new ProducerRecord<>(topic, key, payload));
+            producer.send(new ProducerRecord<>(topic, key, Json.write(event)));
             producer.flush();
         }
     }

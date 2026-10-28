@@ -1,5 +1,7 @@
 package com.example.demo.portfolio.it.harness;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -9,10 +11,14 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 
+import com.example.demo.common.json.Json;
+import com.example.demo.portfolio.events.FillEvent;
+import com.example.demo.portfolio.events.PriceMessage;
+
 /**
  * Produces the inbound Kafka traffic portfolio-service consumes: fills (from market-data's matcher)
- * and price ticks. Every send is flushed before returning, so messages keyed by the same symbol
- * arrive in the order the test sent them.
+ * and price ticks, as the consumer's own event records serialized with {@link Json}. Every send is
+ * flushed before returning, so messages keyed by the same symbol arrive in the order the test sent them.
  */
 public final class KafkaProbe {
 
@@ -30,16 +36,13 @@ public final class KafkaProbe {
     }
 
     /**
-     * A fill on the {@code fills} topic, shaped like market-data's {@code FillEvent}. The order id is
-     * derived as {@code o-<symbol>-<owner>-<side>} so tests can assert it exactly.
+     * A {@link FillEvent} on the {@code fills} topic (the shape market-data's {@code FillEvent} produces).
+     * The order id is derived as {@code o-<symbol>-<owner>-<side>} so tests can assert it exactly.
      */
     public void sendFill(String owner, String symbol, String side, String quantity, String price,
                          String filledAt, long sequenceId) {
-        send("fills", symbol,
-                "{\"orderId\":\"" + orderId(symbol, owner, side) + "\",\"symbol\":\"" + symbol
-                        + "\",\"side\":\"" + side + "\",\"quantity\":" + quantity + ",\"price\":" + price
-                        + ",\"owner\":\"" + owner + "\",\"filledAt\":\"" + filledAt + "\",\"sequenceId\":"
-                        + sequenceId + "}");
+        send("fills", symbol, new FillEvent(orderId(symbol, owner, side), symbol, side, new BigDecimal(quantity),
+                new BigDecimal(price), owner, Instant.parse(filledAt), sequenceId));
     }
 
     /** A fill with the default timestamp and sequence id 1. */
@@ -47,9 +50,9 @@ public final class KafkaProbe {
         sendFill(owner, symbol, side, quantity, price, DEFAULT_FILLED_AT, 1L);
     }
 
-    /** A price tick on the {@code price.ticks} topic, shaped like market-data's {@code PriceTick}. */
+    /** A {@link PriceMessage} on the {@code price.ticks} topic (the shape market-data's {@code PriceTick} produces). */
     public void sendTick(String symbol, String price) {
-        send("price.ticks", symbol, "{\"symbol\":\"" + symbol + "\",\"price\":" + price + "}");
+        send("price.ticks", symbol, new PriceMessage(symbol, new BigDecimal(price)));
     }
 
     /** The order id {@link #sendFill} assigns. */
@@ -57,8 +60,9 @@ public final class KafkaProbe {
         return "o-" + symbol + "-" + owner + "-" + side;
     }
 
-    private void send(String topic, String key, String payload) {
-        producer.send(new ProducerRecord<>(topic, key, payload));
+    /** Sends {@code event} serialized with the project's {@link Json}. */
+    public void send(String topic, String key, Object event) {
+        producer.send(new ProducerRecord<>(topic, key, Json.write(event)));
         producer.flush();
     }
 }

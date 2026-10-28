@@ -18,6 +18,7 @@ import com.example.demo.e2e.framework.service.marketdata.MarketDataService;
 import com.example.demo.e2e.framework.service.order.OrderHistoryService;
 import com.example.demo.e2e.framework.service.order.OrdersService;
 import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
+import com.example.demo.e2e.framework.support.Lookup;
 import com.example.demo.e2e.framework.support.OrderFactory;
 import com.example.demo.e2e.framework.ws.NotificationsWsService;
 import com.example.demo.e2e.framework.ws.WsSession;
@@ -61,9 +62,11 @@ import static org.awaitility.Awaitility.await;
  * (locally {@code docker compose up}; in CI a deployed environment) through the facade service
  * objects only, narrating each step with {@code Allure.step(...)}. It never boots anything.
  *
- * <p>Assertions are robust against a live environment: deterministic facts are asserted exactly
- * (the order echoes the request; a fill references the placed order id), while values the test does
- * not control (live prices) are only asserted to be present. Skipped if the stack is not up.
+ * <p>Every value is asserted exactly, even on a live environment: the order echoes the request and
+ * its server-generated id is the one in the user's history; a fill references the placed order id;
+ * live prices (the demo feed random-walks once a second) are compared with a second, independent read
+ * of the same price taken back to back and retried until no tick lands in between. Skipped if the
+ * stack is not up.
  */
 @Tag("api")
 @ExtendWith(RequireRunningBackend.class)
@@ -103,7 +106,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(order.id());
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
             softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -133,7 +136,7 @@ class TradingTest extends BaseApiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellMarketOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
+        OrderResponse seedOrder = OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION).as(OrderResponse.class);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = findPositionBySymbol(symbol);
             assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
@@ -144,7 +147,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactlyInAnyOrder(seedOrder.id(), order.id());
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.SELL);
             softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -180,7 +183,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse orderResponse = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(orderResponse.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(orderResponse.id());
             softly.assertThat(orderResponse.symbol()).isEqualTo(symbol);
             softly.assertThat(orderResponse.side()).isEqualTo(Side.BUY);
             softly.assertThat(orderResponse.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -205,7 +208,7 @@ class TradingTest extends BaseApiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellLimitOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
+        OrderResponse seedOrder = OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION).as(OrderResponse.class);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = findPositionBySymbol(symbol);
             assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
@@ -217,7 +220,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactlyInAnyOrder(seedOrder.id(), order.id());
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.SELL);
             softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -247,7 +250,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(order.id());
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
             softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -272,7 +275,7 @@ class TradingTest extends BaseApiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellStopOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
+        OrderResponse seedOrder = OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION).as(OrderResponse.class);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = findPositionBySymbol(symbol);
             assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
@@ -288,7 +291,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactlyInAnyOrder(seedOrder.id(), order.id());
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.SELL);
             softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -310,15 +313,23 @@ class TradingTest extends BaseApiTest {
 
     @Test
     void latestPriceIsServed() {
-        Allure.step("market-data serves the latest AAPL price");
-        ApiResponse response = MarketDataService.latestPrice(token, TradingSymbols.AAPL);
-        Price price = response.as(Price.class);
-        assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(OK);
-            softly.assertThat(price.symbol()).isEqualTo(TradingSymbols.AAPL);
-            softly.assertThat(price.price()).isNotNull();
-            softly.assertThat(price.price()).isPositive();
+        Allure.step("Subscribe to the live AAPL ticker, the independent source of the latest price");
+        WsSession session = NotificationsWsService.subscribePrices(token, List.of(TradingSymbols.AAPL));
+
+        // The demo feed random-walks once a second: the latest pushed tick and the served price are
+        // read back to back and retried until no new tick lands between the two reads.
+        Allure.step("market-data serves exactly the latest pushed AAPL price");
+        await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
+            Price pushedPrice = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
+            ApiResponse response = MarketDataService.latestPrice(token, TradingSymbols.AAPL);
+            Price price = response.as(Price.class);
+            assertSoftly(softly -> {
+                softly.assertThat(response.statusCode()).isEqualTo(OK);
+                softly.assertThat(price.symbol()).isEqualTo(TradingSymbols.AAPL);
+                softly.assertThat(price.price()).isEqualByComparingTo(pushedPrice.price());
+            });
         });
+        session.close();
     }
 
     @Test
@@ -342,7 +353,7 @@ class TradingTest extends BaseApiTest {
     @MethodSource("webSocketFillOrders")
     void fillIsPushedOverWebSocketForThePlacedOrder(Side side, String symbol) {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, ORDER_SIZE);
+        OrderResponse seedOrder = OrdersService.placeMarketOrder(token, symbol, Side.BUY, ORDER_SIZE).as(OrderResponse.class);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = findPositionBySymbol(symbol);
             assertThat(seededPosition.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -356,7 +367,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactlyInAnyOrder(seedOrder.id(), order.id());
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(side);
             softly.assertThat(order.quantity()).isEqualByComparingTo(WS_FILL_QUANTITY);
@@ -393,7 +404,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse aliceOrder = aliceOrderResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(aliceOrderResponse.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(aliceOrder.id()).isNotBlank();
+            softly.assertThat(orderHistory(alice.token())).extracting(OrderResponse::id).containsExactly(aliceOrder.id());
             softly.assertThat(aliceOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(aliceOrder.side()).isEqualTo(Side.BUY);
         });
@@ -411,7 +422,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse bobOrder = bobOrderResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(bobOrderResponse.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(bobOrder.id()).isNotBlank();
+            softly.assertThat(orderHistory(bob.token())).extracting(OrderResponse::id).containsExactly(bobOrder.id());
             softly.assertThat(bobOrder.symbol()).isEqualTo(TradingSymbols.MSFT);
             softly.assertThat(bobOrder.side()).isEqualTo(Side.BUY);
         });
@@ -453,7 +464,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(order.id());
             softly.assertThat(order.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
             softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -464,14 +475,8 @@ class TradingTest extends BaseApiTest {
 
         Allure.step("It fills at the persisted market fill price, not the " + limitPrice + " limit");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Fill latestFill = PortfolioService.recentFills(token).asList(Fill.class).stream()
-                    .filter(fill -> fill.orderId().equals(order.id()))
-                    .findFirst()
-                    .orElseThrow();
-            Position googPosition = PortfolioService.positions(token).asList(Position.class).stream()
-                    .filter(position -> position.symbol().equals(TradingSymbols.GOOG))
-                    .findFirst()
-                    .orElseThrow();
+            Fill latestFill = Lookup.fill(PortfolioService.recentFills(token).asList(Fill.class), order.id());
+            Position googPosition = findPositionBySymbol(TradingSymbols.GOOG);
             assertSoftly(softly -> {
                 softly.assertThat(latestFill.price()).isEqualByComparingTo(googPosition.avgPrice());
                 softly.assertThat(latestFill.price()).isNotEqualByComparingTo(limitPrice);
@@ -482,6 +487,7 @@ class TradingTest extends BaseApiTest {
     // A non-marketable LIMIT is a valid order (accepted, SUBMITTED) but never fills — the matcher rests
     // it, so it is saved with status PENDING. (Marketable typed fills are covered above; the matcher's
     // directional logic is owned by the market-data-service OrderMatchingIT.)
+    @Test
     @RunDuringMarketHours
     void pendingLimitOrderIsSubmittedAndResolvesToPending() {
         Allure.step("Place a non-marketable LIMIT BUY 1 GOOG (0.01)");
@@ -490,7 +496,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(order.id());
             softly.assertThat(order.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
             softly.assertThat(order.quantity()).isEqualByComparingTo(BigDecimal.ONE);
@@ -519,7 +525,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(order.id());
             softly.assertThat(order.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
             softly.assertThat(order.quantity()).isEqualByComparingTo(BigDecimal.ONE);
@@ -547,7 +553,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse placedOrder = placedResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(placedResponse.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(placedOrder.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(placedOrder.id());
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
             softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
@@ -592,13 +598,18 @@ class TradingTest extends BaseApiTest {
         Allure.step("Subscribe to live prices over STOMP for " + symbol);
         WsSession session = NotificationsWsService.subscribePrices(token, List.of(symbol));
 
-        Allure.step("A price tick is pushed to the subscriber for " + symbol);
-        Price price = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
-        session.close();
-        assertSoftly(softly -> {
-            softly.assertThat(price.symbol()).isEqualTo(symbol);
-            softly.assertThat(price.price()).isNotNull();
+        // The pushed tick and the price market-data serves are read back to back and retried until
+        // no new tick (one a second) lands between the two reads.
+        Allure.step("A price tick is pushed for " + symbol + " carrying exactly the price market-data serves");
+        await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
+            Price price = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
+            Price servedPrice = MarketDataService.latestPrice(token, symbol).as(Price.class);
+            assertSoftly(softly -> {
+                softly.assertThat(price.symbol()).isEqualTo(symbol);
+                softly.assertThat(price.price()).isEqualByComparingTo(servedPrice.price());
+            });
         });
+        session.close();
     }
 
     @Test
@@ -606,21 +617,27 @@ class TradingTest extends BaseApiTest {
         Allure.step("Subscribe to live prices over STOMP for AAPL, MSFT, and GOOG");
         WsSession session = NotificationsWsService.subscribePrices(token, List.of(TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG));
 
-        Allure.step("A price tick is pushed for each subscribed symbol");
-        Price firstPrice = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
-        Price secondPrice = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
-        Price thirdPrice = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
-        session.close();
-
-        assertSoftly(softly -> {
-            softly.assertThat(firstPrice.price()).isNotNull();
-            softly.assertThat(secondPrice.price()).isNotNull();
-            softly.assertThat(thirdPrice.price()).isNotNull();
-            softly.assertThat(List.of(firstPrice.symbol(), secondPrice.symbol(), thirdPrice.symbol()).stream()
-                    .sorted(Comparator.naturalOrder())
-                    .toList())
-                    .isEqualTo(List.of(TradingSymbols.AAPL, TradingSymbols.GOOG, TradingSymbols.MSFT));
+        // Each pushed tick is compared with the price market-data serves for its symbol, read right
+        // after; retried until no new tick round (one a second) lands between the reads.
+        Allure.step("A price tick is pushed for each subscribed symbol, carrying exactly the served price");
+        await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
+            Price firstPrice = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
+            Price secondPrice = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
+            Price thirdPrice = session.nextFrameAs(Price.class, WS_FRAME_TIMEOUT);
+            Price firstServed = MarketDataService.latestPrice(token, firstPrice.symbol()).as(Price.class);
+            Price secondServed = MarketDataService.latestPrice(token, secondPrice.symbol()).as(Price.class);
+            Price thirdServed = MarketDataService.latestPrice(token, thirdPrice.symbol()).as(Price.class);
+            assertSoftly(softly -> {
+                softly.assertThat(firstPrice.price()).isEqualByComparingTo(firstServed.price());
+                softly.assertThat(secondPrice.price()).isEqualByComparingTo(secondServed.price());
+                softly.assertThat(thirdPrice.price()).isEqualByComparingTo(thirdServed.price());
+                softly.assertThat(List.of(firstPrice.symbol(), secondPrice.symbol(), thirdPrice.symbol()).stream()
+                        .sorted(Comparator.naturalOrder())
+                        .toList())
+                        .isEqualTo(List.of(TradingSymbols.AAPL, TradingSymbols.GOOG, TradingSymbols.MSFT));
+            });
         });
+        session.close();
     }
 
     // A brand-new user (registered this run) starts with an empty book, can place an order, and sees
@@ -636,7 +653,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(order.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(order.id());
             softly.assertThat(order.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
             softly.assertThat(order.quantity()).isEqualByComparingTo(NEW_USER_BUY_QUANTITY);
@@ -653,24 +670,31 @@ class TradingTest extends BaseApiTest {
         });
     }
 
-    // P&L flows through the live stack: after a fill and live price ticks, the position carries a
-    // (non-null) market price and an unrealized P&L.
+    // P&L flows through the live stack: after a fill and live price ticks, the position is marked at
+    // exactly the price market-data serves, and its unrealized P&L is (mark - average cost) × quantity.
     @RunDuringMarketHours
     @Test
     void positionCarriesLiveMarketPriceAndPnl() {
         Allure.step("Buy AAPL");
         OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.BUY, PNL_BUY_QUANTITY);
 
-        Allure.step("The AAPL position eventually has a live mark and P&L");
+        // The mark follows the once-a-second demo feed through Kafka, so position and served price are
+        // read back to back and retried until both reflect the same tick.
+        Allure.step("The AAPL position is marked at exactly the live price market-data serves");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position aapl = PortfolioService.positions(token).asList(Position.class).stream()
-                    .filter(position -> position.symbol().equals(TradingSymbols.AAPL))
-                    .findFirst().orElseThrow();
+            Position aapl = findPositionBySymbol(TradingSymbols.AAPL);
+            Price servedPrice = MarketDataService.latestPrice(token, TradingSymbols.AAPL).as(Price.class);
             assertSoftly(softly -> {
-                softly.assertThat(aapl.marketPrice()).isNotNull();
-                softly.assertThat(aapl.unrealizedPnl()).isNotNull();
+                softly.assertThat(aapl.quantity()).isEqualByComparingTo(PNL_BUY_QUANTITY);
+                softly.assertThat(aapl.marketPrice()).isEqualByComparingTo(servedPrice.price());
             });
         });
+
+        Allure.step("Its unrealized P&L is exactly (mark - average cost) × quantity");
+        Position markedPosition = findPositionBySymbol(TradingSymbols.AAPL);
+        BigDecimal expectedPnl = markedPosition.marketPrice().subtract(markedPosition.avgPrice())
+                .multiply(markedPosition.quantity());
+        assertThat(markedPosition.unrealizedPnl()).isEqualByComparingTo(expectedPnl);
     }
 
     // Cancelling an already-cancelled order is idempotent (still 200 / CANCELLED).
@@ -682,7 +706,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse placedOrder = placedResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(placedResponse.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(placedOrder.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(placedOrder.id());
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
             softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
@@ -734,7 +758,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse placedOrder = placedResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(placedResponse.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(placedOrder.id()).isNotBlank();
+            softly.assertThat(orderHistory(token)).extracting(OrderResponse::id).containsExactly(placedOrder.id());
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
             softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
@@ -773,7 +797,7 @@ class TradingTest extends BaseApiTest {
         OrderResponse aliceOrder = response.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(aliceOrder.id()).isNotBlank();
+            softly.assertThat(orderHistory(alice)).extracting(OrderResponse::id).containsExactly(aliceOrder.id());
             softly.assertThat(aliceOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(aliceOrder.side()).isEqualTo(Side.BUY);
             softly.assertThat(aliceOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
@@ -788,7 +812,7 @@ class TradingTest extends BaseApiTest {
 
         Allure.step("Bob does NOT see Alice's order");
         List<OrderResponse> bobOrders = OrderHistoryService.history(bob).asList(OrderResponse.class);
-        assertThat(bobOrders).extracting(OrderResponse::id).doesNotContain(aliceOrderId);
+        assertThat(bobOrders).isEmpty();
     }
 
     // Authentication: an expired token is rejected by the deployed services (shared-secret JWT,
@@ -813,17 +837,15 @@ class TradingTest extends BaseApiTest {
     }
 
     private Position findPositionBySymbol(String symbol) {
-        return PortfolioService.positions(token).asList(Position.class).stream()
-                .filter(position -> position.symbol().equals(symbol))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("No position for " + symbol));
+        return Lookup.position(PortfolioService.positions(token).asList(Position.class), symbol);
     }
 
     private OrderResponse findOrderById(String orderId) {
-        return OrderHistoryService.history(token).asList(OrderResponse.class).stream()
-                .filter(order -> order.id().equals(orderId))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("No order for " + orderId));
+        return Lookup.order(orderHistory(token), orderId);
+    }
+
+    private static List<OrderResponse> orderHistory(String userToken) {
+        return OrderHistoryService.history(userToken).asList(OrderResponse.class);
     }
 
     private static Stream<Arguments> webSocketFillOrders() {

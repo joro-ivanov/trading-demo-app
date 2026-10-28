@@ -84,6 +84,7 @@
                         <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/test-conventions.xml</ruleset>
                         <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-internal-server-error.xml</ruleset>
                         <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-magic-values.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-raw-json.xml</ruleset>
                     </rulesets>
                 </configuration>
             </plugin>

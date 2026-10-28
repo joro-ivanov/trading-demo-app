@@ -3,6 +3,8 @@ package com.example.demo.e2e.framework.pages;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.AriaRole;
 
+import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.e2e.framework.model.Login;
 import com.example.demo.e2e.framework.ui.BasePage;
 import com.example.demo.e2e.framework.ui.RouteStub;
 
@@ -16,6 +18,8 @@ public final class RegistrationPage extends BasePage {
 
     private static final String REGISTER_TOGGLE_BUTTON = "Need an account? Register";
     private static final String REGISTER_ROUTE = "**/api/auth/register";
+    private static final String STUB_TOKEN = "jwt";
+    private static final String STUB_USERNAME = "newuser";
     private static final String USERNAME_INPUT = "input[name=username]";
     private static final String EMAIL_INPUT = "input[name=email]";
     private static final String PASSWORD_INPUT = "input[name=password]";
@@ -41,7 +45,7 @@ public final class RegistrationPage extends BasePage {
     /** Fulfil every register POST with the given status and a valid login body. */
     public RegistrationPage stubRegister(int status) {
         logUi("stub register status=" + status);
-        registerRoute.fulfill(status, "{\"token\":\"jwt\",\"username\":\"newuser\"}");
+        registerRoute.fulfill(status, Json.write(new Login(STUB_TOKEN, STUB_USERNAME)));
         return this;
     }
 

@@ -13,8 +13,10 @@ import com.example.demo.e2e.framework.model.Side;
 import com.example.demo.e2e.framework.model.TradingSymbols;
 import com.example.demo.e2e.framework.service.funds.FundsService;
 import com.example.demo.e2e.framework.service.marketdata.MarketDataService;
+import com.example.demo.e2e.framework.service.order.OrderHistoryService;
 import com.example.demo.e2e.framework.service.order.OrdersService;
 import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
+import com.example.demo.e2e.framework.support.ApiErrorMessages;
 import com.example.demo.e2e.harness.RequireRunningBackend;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
 import io.qameta.allure.Allure;
@@ -24,7 +26,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.regex.Pattern;
 
 import static com.example.demo.e2e.framework.support.ApiErrorMessages.INVALID_REQUEST_CONTENT;
 import static com.example.demo.e2e.framework.support.ApiPaths.FUNDS_DEPOSIT;
@@ -38,7 +39,6 @@ import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNPROCESSAB
 import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNPROCESSABLE_CONTENT_REASON;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.within;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
 
@@ -51,10 +51,8 @@ import static org.awaitility.Awaitility.await;
 @ExtendWith(TestLogArtifacts.class)
 class FundsTest extends BaseApiTest {
 
-    private static final Pattern INSUFFICIENT_FUNDS_FOR_AAPL =
-            Pattern.compile("Insufficient funds to buy 1 AAPL \\(cost (?<cost>\\d+\\.\\d{4}), available 0\\.0000\\)");
-    private static final BigDecimal LIVE_PRICE_TOLERANCE = new BigDecimal("1.0000");
-    private static final String COST_GROUP = "cost";
+    /** A fresh user's cash, as the funds guard reports it. */
+    private static final BigDecimal NO_CASH = new BigDecimal("0.0000");
     private static final String FRESH_USER_PREFIX = "f";
     private static final BigDecimal DEPOSIT = new BigDecimal("1000");
     private static final BigDecimal WITHDRAWAL = new BigDecimal("400");
@@ -137,19 +135,23 @@ class FundsTest extends BaseApiTest {
     @Test
     void anUnfundedBuyIsRejectedThenSucceedsAfterDeposit() {
         String unfundedToken = registerFreshUser(FRESH_USER_PREFIX).token();
-        Allure.step("An unfunded BUY is rejected for insufficient funds");
-        ApiResponse rejectedOrder = OrdersService.placeMarketOrder(unfundedToken, TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
-        ErrorResponse rejectedOrderProblem = rejectedOrder.as(ErrorResponse.class);
-        Price currentPrice = MarketDataService.latestPrice(unfundedToken, TradingSymbols.AAPL).as(Price.class);
-        BigDecimal rejectedCost = rejectedCost(rejectedOrderProblem);
-        assertSoftly(softly -> {
-            softly.assertThat(rejectedOrder.statusCode()).isEqualTo(UNPROCESSABLE_CONTENT);
-            softly.assertThat(rejectedOrderProblem.error()).isEqualTo(UNPROCESSABLE_CONTENT_REASON);
-            softly.assertThat(rejectedOrderProblem.status()).isEqualTo(UNPROCESSABLE_CONTENT);
-            softly.assertThat(rejectedOrderProblem.message())
-                    .matches(INSUFFICIENT_FUNDS_FOR_AAPL);
-            softly.assertThat(rejectedCost).isCloseTo(currentPrice.price(), within(LIVE_PRICE_TOLERANCE));
-            softly.assertThat(rejectedOrderProblem.path()).isEqualTo(ORDERS);
+        // The guard values the BUY at the live price (the demo feed random-walks once a second): the
+        // price is read right before the order and the pair is retried until no tick lands in between,
+        // so the whole message, cost included, is asserted exactly. A rejected order is not persisted.
+        Allure.step("An unfunded BUY is rejected for insufficient funds, costed at the live price");
+        await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
+            Price currentPrice = MarketDataService.latestPrice(unfundedToken, TradingSymbols.AAPL).as(Price.class);
+            ApiResponse rejectedOrder = OrdersService.placeMarketOrder(unfundedToken, TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
+            ErrorResponse rejectedOrderProblem = rejectedOrder.as(ErrorResponse.class);
+            String expectedMessage = ApiErrorMessages.insufficientFundsToBuy(
+                    BigDecimal.ONE, TradingSymbols.AAPL, currentPrice.price().multiply(BigDecimal.ONE), NO_CASH);
+            assertSoftly(softly -> {
+                softly.assertThat(rejectedOrder.statusCode()).isEqualTo(UNPROCESSABLE_CONTENT);
+                softly.assertThat(rejectedOrderProblem.error()).isEqualTo(UNPROCESSABLE_CONTENT_REASON);
+                softly.assertThat(rejectedOrderProblem.status()).isEqualTo(UNPROCESSABLE_CONTENT);
+                softly.assertThat(rejectedOrderProblem.message()).isEqualTo(expectedMessage);
+                softly.assertThat(rejectedOrderProblem.path()).isEqualTo(ORDERS);
+            });
         });
 
         Allure.step("After depositing, the same BUY succeeds");
@@ -158,20 +160,14 @@ class FundsTest extends BaseApiTest {
         OrderResponse acceptedOrderView = acceptedOrder.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(acceptedOrder.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(acceptedOrderView.id()).isNotBlank();
+            softly.assertThat(OrderHistoryService.history(unfundedToken).asList(OrderResponse.class))
+                    .extracting(OrderResponse::id).containsExactly(acceptedOrderView.id());
             softly.assertThat(acceptedOrderView.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(acceptedOrderView.side()).isEqualTo(Side.BUY);
             softly.assertThat(acceptedOrderView.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(acceptedOrderView.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(acceptedOrderView.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
-    }
-
-    private static BigDecimal rejectedCost(ErrorResponse problem) {
-        return INSUFFICIENT_FUNDS_FOR_AAPL.matcher(problem.message()).results()
-                .findFirst()
-                .map(match -> new BigDecimal(match.group(COST_GROUP)))
-                .orElseThrow(() -> new AssertionError("Unexpected insufficient-funds message: " + problem.message()));
     }
 
     @RunDuringMarketHours
@@ -184,7 +180,9 @@ class FundsTest extends BaseApiTest {
         OrderResponse buyOrder = buyResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(buyResponse.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(buyOrder.id()).isNotBlank();
+            softly.assertThat(OrderHistoryService.history(token).asList(OrderResponse.class))
+
+                    .extracting(OrderResponse::id).containsExactly(buyOrder.id());
             softly.assertThat(buyOrder.side()).isEqualTo(Side.BUY);
         });
 
@@ -202,7 +200,9 @@ class FundsTest extends BaseApiTest {
         OrderResponse sellOrder = sellResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(sellResponse.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(sellOrder.id()).isNotBlank();
+            softly.assertThat(OrderHistoryService.history(token).asList(OrderResponse.class))
+
+                    .extracting(OrderResponse::id).containsExactlyInAnyOrder(buyOrder.id(), sellOrder.id());
             softly.assertThat(sellOrder.side()).isEqualTo(Side.SELL);
         });
 

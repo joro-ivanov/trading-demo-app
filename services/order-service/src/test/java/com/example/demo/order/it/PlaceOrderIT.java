@@ -29,11 +29,14 @@ import com.example.demo.order.domain.Side;
 import com.example.demo.order.events.OrderEventPublisher;
 import com.example.demo.order.it.harness.ApiError;
 import com.example.demo.order.it.harness.OrderITBase;
-import com.example.demo.order.it.harness.OrderJson;
+import com.example.demo.order.it.harness.OrderRequest;
+import com.example.demo.order.it.harness.Orders;
 import com.example.demo.order.it.harness.OrderSubmittedMessage;
+import com.example.demo.order.it.harness.stubs.ExchangeOrder;
 import com.example.demo.order.it.harness.stubs.ExchangeStubs;
 import com.example.demo.order.it.harness.stubs.MarketDataStubs;
 import com.example.demo.order.it.harness.stubs.PortfolioStubs;
+import com.example.demo.order.it.harness.stubs.RiskCheckRequest;
 import com.example.demo.order.it.harness.stubs.RiskStubs;
 import com.example.demo.order.web.OrderResponse;
 
@@ -97,13 +100,13 @@ class PlaceOrderIT extends OrderITBase {
     private static final String EXCHANGE_FAILURE_SYMBOL = "EXFAIL";
     private static final String EXCHANGE_FAILURE_MESSAGE = "Exchange returned an invalid response";
 
-    private static final String ONE_SHARE_BUY = OrderJson.market(SYMBOL, Side.BUY.name(), ONE_SHARE);
+    private static final OrderRequest ONE_SHARE_BUY = Orders.market(SYMBOL, Side.BUY.name(), ONE_SHARE);
 
     // ---- happy path: persisted, routed, published ----
 
     @Test
     void placeOrderPersistsRoutesAndPublishes() {
-        String order = OrderJson.market(ROUTED_SYMBOL, Side.BUY.name(), ROUTED_QUANTITY);
+        OrderRequest order = Orders.market(ROUTED_SYMBOL, Side.BUY.name(), ROUTED_QUANTITY);
         String body = api(TESTER)
                 .body(order)
                 .post(ORDERS_PATH)
@@ -133,13 +136,14 @@ class PlaceOrderIT extends OrderITBase {
         });
         // The exchange receives exactly the order as placed (same fields, same values).
         EXCHANGE.verify(postRequestedFor(urlPathEqualTo(ExchangeStubs.ORDERS))
-                .withRequestBody(equalToJson(order)));
+                .withRequestBody(equalToJson(Json.write(
+                        new ExchangeOrder(ROUTED_SYMBOL, Side.BUY.name(), new BigDecimal(ROUTED_QUANTITY))))));
     }
 
     @ParameterizedTest(name = "side {0} is accepted")
     @ValueSource(strings = {"BUY", "SELL"})
     void bothSidesAreAcceptedAndSubmitted(String side) {
-        OrderResponse response = place(TESTER, OrderJson.market(SYMBOL, side, BOTH_SIDES_QUANTITY));
+        OrderResponse response = place(TESTER, Orders.market(SYMBOL, side, BOTH_SIDES_QUANTITY));
 
         assertSoftly(softly -> {
             softly.assertThat(response.side()).isEqualTo(side);
@@ -151,7 +155,7 @@ class PlaceOrderIT extends OrderITBase {
     @ParameterizedTest(name = "quantity {0} is accepted")
     @ValueSource(strings = {"0.0001", "1", "999999999"})
     void acceptsValidQuantityBoundaries(String quantity) {
-        OrderResponse response = place(TESTER, OrderJson.market(SYMBOL, Side.BUY.name(), quantity));
+        OrderResponse response = place(TESTER, Orders.market(SYMBOL, Side.BUY.name(), quantity));
 
         assertSoftly(softly -> {
             softly.assertThat(response.quantity()).isEqualByComparingTo(quantity);
@@ -161,12 +165,15 @@ class PlaceOrderIT extends OrderITBase {
 
     @ParameterizedTest(name = "type {0} is accepted")
     @CsvSource(delimiter = '|', value = {
-        "MARKET | {\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"MARKET\"}",
-        "LIMIT  | {\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"LIMIT\",\"limitPrice\":195.50}",
-        "STOP   | {\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"STOP\",\"stopPrice\":205.00}"
+        "MARKET |        |",
+        "LIMIT  | 195.50 |",
+        "STOP   |        | 205.00"
     })
-    void acceptsEachOrderType(String type, String body) {
-        OrderResponse response = place(TESTER, body);
+    void acceptsEachOrderType(String type, BigDecimal limitPrice, BigDecimal stopPrice) {
+        OrderRequest order = new OrderRequest(SYMBOL, Side.BUY.name(), new BigDecimal(ONE_SHARE), type,
+                limitPrice, stopPrice);
+
+        OrderResponse response = place(TESTER, order);
 
         assertSoftly(softly -> {
             softly.assertThat(response.type()).isEqualTo(type);
@@ -178,24 +185,28 @@ class PlaceOrderIT extends OrderITBase {
 
     // EP/BVA invalid partitions: qty 0 (off-point of @Positive), negative, missing; blank/whitespace
     // symbol (@NotBlank); null and unparseable side; LIMIT/STOP missing or non-positive required price.
-    @ParameterizedTest(name = "{0} -> 400")
-    @ValueSource(strings = {
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":0}",
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":-5}",
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":null}",
-        "{\"symbol\":\"\",\"side\":\"BUY\",\"quantity\":10}",
-        "{\"symbol\":\"   \",\"side\":\"BUY\",\"quantity\":10}",
-        "{\"symbol\":\"AAPL\",\"side\":null,\"quantity\":10}",
-        "{\"symbol\":\"AAPL\",\"side\":\"HODL\",\"quantity\":10}",
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"LIMIT\"}",
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"STOP\"}",
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"LIMIT\",\"limitPrice\":0}",
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"LIMIT\",\"limitPrice\":-5}",
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"STOP\",\"stopPrice\":0}",
-        "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1,\"type\":\"STOP\",\"stopPrice\":-5}"
+    // An empty cell is a null field; '' is the empty string.
+    @ParameterizedTest(name = "symbol [{0}] side {1} quantity {2} type {3} limit {4} stop {5} -> 400")
+    @CsvSource(delimiter = '|', value = {
+        "AAPL  | BUY  | 0  |       |    |",
+        "AAPL  | BUY  | -5 |       |    |",
+        "AAPL  | BUY  |    |       |    |",
+        "''    | BUY  | 10 |       |    |",
+        "'   ' | BUY  | 10 |       |    |",
+        "AAPL  |      | 10 |       |    |",
+        "AAPL  | HODL | 10 |       |    |",
+        "AAPL  | BUY  | 1  | LIMIT |    |",
+        "AAPL  | BUY  | 1  | STOP  |    |",
+        "AAPL  | BUY  | 1  | LIMIT | 0  |",
+        "AAPL  | BUY  | 1  | LIMIT | -5 |",
+        "AAPL  | BUY  | 1  | STOP  |    | 0",
+        "AAPL  | BUY  | 1  | STOP  |    | -5"
     })
-    void rejectsInvalidOrderWith400(String body) {
-        String response = api(TESTER).body(body).post(ORDERS_PATH)
+    void rejectsInvalidOrderWith400(String symbol, String side, BigDecimal quantity, String type,
+                                    BigDecimal limitPrice, BigDecimal stopPrice) {
+        OrderRequest order = new OrderRequest(symbol, side, quantity, type, limitPrice, stopPrice);
+
+        String response = api(TESTER).body(order).post(ORDERS_PATH)
                 .then().statusCode(HttpStatus.BAD_REQUEST.value())
                 .extract().asString();
 
@@ -212,7 +223,7 @@ class PlaceOrderIT extends OrderITBase {
 
     @Test
     void rejectsRequestWithoutTokenWith401() {
-        api().body(OrderJson.market(SYMBOL, Side.BUY.name(), ROUTED_QUANTITY)).post(ORDERS_PATH)
+        api().body(Orders.market(SYMBOL, Side.BUY.name(), ROUTED_QUANTITY)).post(ORDERS_PATH)
                 .then().statusCode(HttpStatus.UNAUTHORIZED.value());
 
         EXCHANGE.verify(0, postRequestedFor(urlPathEqualTo(ExchangeStubs.ORDERS)));
@@ -240,7 +251,7 @@ class PlaceOrderIT extends OrderITBase {
     // Ownership comes from the token's subject, never the body — you cannot place an order as someone else.
     @Test
     void orderIsOwnedByTheAuthenticatedSubject() {
-        OrderResponse response = place(ALICE, OrderJson.claimingOwner(SYMBOL, Side.BUY.name(), ONE_SHARE, BOB_NAME));
+        OrderResponse response = place(ALICE, Orders.claimingOwner(SYMBOL, Side.BUY.name(), ONE_SHARE, BOB_NAME));
 
         assertSoftly(softly -> {
             softly.assertThat(response.owner()).isEqualTo(ALICE_NAME);
@@ -290,7 +301,7 @@ class PlaceOrderIT extends OrderITBase {
     void rejectsSellBeyondHoldingsWith422(String held, String quantity) {
         PORTFOLIO.stubFor(PortfolioStubs.holds(SYMBOL, held));
 
-        String response = api(TESTER).body(OrderJson.market(SYMBOL, Side.SELL.name(), quantity))
+        String response = api(TESTER).body(Orders.market(SYMBOL, Side.SELL.name(), quantity))
                 .post(ORDERS_PATH)
                 .then().statusCode(HttpStatus.UNPROCESSABLE_ENTITY.value())
                 .extract().asString();
@@ -306,7 +317,7 @@ class PlaceOrderIT extends OrderITBase {
     void allowsSellWithinHoldings(String held) {
         PORTFOLIO.stubFor(PortfolioStubs.holds(SYMBOL, held));
 
-        OrderResponse response = place(TESTER, OrderJson.market(SYMBOL, Side.SELL.name(), SELL_QUANTITY));
+        OrderResponse response = place(TESTER, Orders.market(SYMBOL, Side.SELL.name(), SELL_QUANTITY));
 
         assertThat(response.status()).isEqualTo(OrderStatus.SUBMITTED.name());
     }
@@ -319,7 +330,7 @@ class PlaceOrderIT extends OrderITBase {
         PORTFOLIO.stubFor(PortfolioStubs.hasCash(INSUFFICIENT_CASH));
 
         // cost = 1 × 100 = 100 > 50 available → rejected before routing
-        String response = api(TESTER).body(OrderJson.market(FUNDED_SYMBOL, Side.BUY.name(), ONE_SHARE))
+        String response = api(TESTER).body(Orders.market(FUNDED_SYMBOL, Side.BUY.name(), ONE_SHARE))
                 .post(ORDERS_PATH)
                 .then().statusCode(HttpStatus.UNPROCESSABLE_ENTITY.value())
                 .extract().asString();
@@ -333,7 +344,7 @@ class PlaceOrderIT extends OrderITBase {
         MARKET_DATA.stubFor(MarketDataStubs.hasPrice(FUNDED_SYMBOL, FUNDED_PRICE));
         PORTFOLIO.stubFor(PortfolioStubs.hasCash(SUFFICIENT_CASH));
 
-        OrderResponse response = place(TESTER, OrderJson.market(FUNDED_SYMBOL, Side.BUY.name(), ONE_SHARE));
+        OrderResponse response = place(TESTER, Orders.market(FUNDED_SYMBOL, Side.BUY.name(), ONE_SHARE));
 
         assertThat(response.status()).isEqualTo(OrderStatus.SUBMITTED.name());
     }
@@ -347,32 +358,35 @@ class PlaceOrderIT extends OrderITBase {
         PORTFOLIO.stubFor(PortfolioStubs.hasCash(NO_CASH));
 
         OrderResponse response = place(TESTER,
-                OrderJson.limit(UNPRICED_SYMBOL, Side.BUY.name(), ONE_SHARE, UNPRICED_LIMIT));
+                Orders.limit(UNPRICED_SYMBOL, Side.BUY.name(), ONE_SHARE, UNPRICED_LIMIT));
 
         assertThat(response.status()).isEqualTo(OrderStatus.SUBMITTED.name());
     }
 
     // ---- risk check: every order type, valued at its worst-case execution price ----
 
-    @ParameterizedTest(name = "{0} is risk-checked at {2}")
+    // The MARKET order has no type (an empty cell is null): the service defaults it and values it at the market price.
+    @ParameterizedTest(name = "{0} is risk-checked at {4}")
     @CsvSource(delimiter = '|', value = {
-        "MARKET | {\"symbol\":\"RISKV\",\"side\":\"BUY\",\"quantity\":2}                                  | 100",
-        "LIMIT  | {\"symbol\":\"RISKV\",\"side\":\"BUY\",\"quantity\":2,\"type\":\"LIMIT\",\"limitPrice\":120} | 120",
-        "STOP   | {\"symbol\":\"RISKV\",\"side\":\"BUY\",\"quantity\":2,\"type\":\"STOP\",\"stopPrice\":150}   | 150"
+        "MARKET |       |     |     | 100",
+        "LIMIT  | LIMIT | 120 |     | 120",
+        "STOP   | STOP  |     | 150 | 150"
     })
-    void everyOrderTypeIsRiskCheckedAtItsWorstCasePrice(String type, String order, String riskPrice) {
-        place(TESTER, order);
+    void everyOrderTypeIsRiskCheckedAtItsWorstCasePrice(String label, String type, BigDecimal limitPrice,
+                                                         BigDecimal stopPrice, BigDecimal riskPrice) {
+        BigDecimal quantity = new BigDecimal(RISK_QUANTITY);
+        place(TESTER, new OrderRequest(RISK_SYMBOL, Side.BUY.name(), quantity, type, limitPrice, stopPrice));
 
         RISK.verify(postRequestedFor(urlPathEqualTo(RiskStubs.CHECK))
-                .withRequestBody(equalToJson(
-                        OrderJson.riskCheck(RISK_SYMBOL, Side.BUY.name(), RISK_QUANTITY, riskPrice))));
+                .withRequestBody(equalToJson(Json.write(
+                        new RiskCheckRequest(RISK_SYMBOL, Side.BUY.name(), quantity, riskPrice)))));
     }
 
     @Test
     void aMarketOrderWithNoMarketPriceIsRefusedBecauseItCannotBeValued() {
         MARKET_DATA.stubFor(MarketDataStubs.hasNoPriceFor(UNPRICED_SYMBOL));
 
-        String response = api(TESTER).body(OrderJson.market(UNPRICED_SYMBOL, Side.SELL.name(), ONE_SHARE))
+        String response = api(TESTER).body(Orders.market(UNPRICED_SYMBOL, Side.SELL.name(), ONE_SHARE))
                 .post(ORDERS_PATH)
                 .then().statusCode(HttpStatus.UNPROCESSABLE_ENTITY.value())
                 .extract().asString();
@@ -395,7 +409,7 @@ class PlaceOrderIT extends OrderITBase {
     void exchangeRejectionMarksRejectedAndDoesNotPublish() {
         EXCHANGE.stubFor(ExchangeStubs.declinesOrders());
 
-        OrderResponse response = place(TESTER, OrderJson.market(DECLINED_SYMBOL, Side.BUY.name(), ONE_SHARE));
+        OrderResponse response = place(TESTER, Orders.market(DECLINED_SYMBOL, Side.BUY.name(), ONE_SHARE));
 
         List<String> published = KAFKA_PROBE.valuesWithin(OrderEventPublisher.TOPIC, response.id(), NO_EVENT_WINDOW);
         assertSoftly(softly -> {
@@ -412,7 +426,7 @@ class PlaceOrderIT extends OrderITBase {
         EXCHANGE.stubFor(ExchangeStubs.failsWithServerError());
 
         String response = api(tokenFor(EXCHANGE_FAILURE_OWNER))
-                .body(OrderJson.market(EXCHANGE_FAILURE_SYMBOL, Side.BUY.name(), ONE_SHARE))
+                .body(Orders.market(EXCHANGE_FAILURE_SYMBOL, Side.BUY.name(), ONE_SHARE))
                 .post(ORDERS_PATH)
                 .then().statusCode(HttpStatus.BAD_GATEWAY.value())
                 .extract().asString();
@@ -432,7 +446,7 @@ class PlaceOrderIT extends OrderITBase {
 
     @Test
     void responseQuantityKeepsTheRequestedPrecision() {
-        OrderResponse response = place(TESTER, OrderJson.market(SYMBOL, Side.BUY.name(), FRACTIONAL_QUANTITY));
+        OrderResponse response = place(TESTER, Orders.market(SYMBOL, Side.BUY.name(), FRACTIONAL_QUANTITY));
 
         assertThat(response.quantity()).isEqualByComparingTo(new BigDecimal(FRACTIONAL_QUANTITY));
     }

@@ -1,8 +1,12 @@
 package com.example.demo.e2e.framework.pages;
 
+import java.util.Map;
+
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.AriaRole;
 
+import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.e2e.framework.model.Login;
 import com.example.demo.e2e.framework.ui.BasePage;
 import com.example.demo.e2e.framework.ui.RouteStub;
 
@@ -17,6 +21,9 @@ public final class LoginPage extends BasePage {
     private static final String ENTER_BUTTON = "Enter";
     private static final String ERROR = ".login .error";
     private static final String LOGIN_ROUTE = "**/api/auth/login";
+    private static final String STUB_TOKEN = "stub-token";
+    private static final int STUB_OK = 200;
+    private static final String EMPTY_JSON_OBJECT = Json.write(Map.of());
 
     private final RouteStub loginRoute = intercept(LOGIN_ROUTE);
 
@@ -37,14 +44,14 @@ public final class LoginPage extends BasePage {
     /** Fulfil every login POST with the given HTTP status (and an empty JSON body). */
     public LoginPage stubLogin(int status) {
         logUi("stub login status=" + status);
-        loginRoute.fulfill(status, "{}");
+        loginRoute.fulfill(status, EMPTY_JSON_OBJECT);
         return this;
     }
 
     /** Fulfil the login POST with a 200 carrying the given username (for output-encoding tests). */
     public LoginPage stubLoginSuccess(String username) {
         logUi("stub login success username=" + username);
-        loginRoute.fulfill(200, "{\"token\":\"stub-token\",\"username\":\"" + username + "\"}");
+        loginRoute.fulfill(STUB_OK, Json.write(new Login(STUB_TOKEN, username)));
         return this;
     }
 
