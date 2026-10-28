@@ -115,9 +115,12 @@ API requests:
 - tests call service objects such as `AuthService`, `OrdersService`, `PortfolioService`,
   `FundsService`, and `MarketDataService`
 - service methods build an `ApiRequest` and return an `ApiResponse`; they do not assert status codes
-  or validate inputs, so negative cases still reach the server
+  or validate field values, so negative cases still reach the server
 - `BaseService` is the only e2e class that talks to REST-Assured; swapping the HTTP engine should be a
   framework change, not a test rewrite
+- request bodies are DTOs/records: `ApiRequest.body(Object)` rejects a `String`. A hand-written body goes
+  through `rawBody(String)`, which only a `@RawJsonPayload(reason = "…")` test may call (ArchUnit enforces
+  it); `BaseService` sends it verbatim
 - response bodies are deserialized with `response.as(Dto.class)` or `response.asList(Dto.class)`;
   tests assert typed DTOs, not JSON paths, maps, `JsonNode`, or response string fragments
 - each request/response is written to the per-test Allure `Full test log` attachment
@@ -147,6 +150,11 @@ General e2e test conventions:
 - tests are linear: setup → action → assert; PMD bans `if`, loops, `switch`, ternaries, and `try` in
   test sources
 - long-running async behavior uses Awaitility or Playwright web-first waits, not `Thread.sleep`
+- assertions are exact, even against live data: tokens are decoded and their claims compared, order ids
+  are checked against the user's persisted history (a fresh user per test), and live prices are
+  cross-checked against the price market-data serves (P&L recomputed exactly from the same response)
+  instead of being checked for presence. Lookups such as "the position for this symbol" live in
+  framework helpers (`framework/support/Lookup`, `Tokens`), not in `filter` callbacks in the test
 - `Allure.step(...)` names the user-visible action being performed
 - tests that place real orders are gated by `@RunDuringMarketHours`; use the fixed-clock flow above
   for deterministic anytime runs
@@ -435,7 +443,8 @@ catches what the others cannot:
     (the services, common, integration-tests and wiremock-ws-spike), forbids weak or non-deterministic
     assertions in *all* their tests: unit, ArchUnit and ITs. The banned calls are AssertJ
     `contains`/`isNotNull`/`isGreaterThan`…, Hamcrest `containsString`… and WireMock `containing`….
-    e2e is excluded because it asserts live values on a running stack.
+    e2e is not covered by this class, but its tests follow the same exact-value style (see "General e2e
+    test conventions") and TestLint checks them.
     The same class forbids reading JSON by hand (JsonPath, `JsonNode`, `readTree`, REST-Assured
     `body("path", matcher)`, WireMock `matchingJsonPath`) and allows a raw `body(String)` or a call to a
     `@RawJsonPayload` raw sender only from a `@RawJsonPayload` method. The annotation itself may sit
