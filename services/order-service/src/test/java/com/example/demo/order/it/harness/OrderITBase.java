@@ -1,0 +1,142 @@
+package com.example.demo.order.it.harness;
+
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import com.example.demo.common.json.Json;
+import com.example.demo.common.security.Jwt;
+import com.example.demo.order.domain.OrderRepository;
+import com.example.demo.order.domain.OrderStatus;
+import com.example.demo.order.it.harness.stubs.ExchangeStubs;
+import com.example.demo.order.it.harness.stubs.MarketDataStubs;
+import com.example.demo.order.it.harness.stubs.PortfolioStubs;
+import com.example.demo.order.web.OrderResponse;
+import com.github.tomakehurst.wiremock.WireMockServer;
+
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
+
+/**
+ * Shared harness for the order-service integration tests (docs/DESIGN.md §7.2): the real service on a
+ * random port against real Postgres + Confluent cp-kafka (Testcontainers), driven over HTTP with
+ * REST-Assured. Only external communication is mocked: the exchange, portfolio-service and
+ * market-data-service are three WireMock servers. Containers and servers are singletons started once
+ * per JVM, so every {@code *IT} class shares them and the cached Spring context. The injected
+ * {@code Clock} is a {@link MutableClock}, reset to {@link #DURING_HOURS} before each test.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestClockConfig.class)
+public abstract class OrderITBase {
+
+    protected static final String SECRET = "demo-secret-demo-secret-demo-secret-1234";
+    /** Wednesday 2024-06-12, 14:00 America/New_York (18:00Z) — inside the 09:30–16:00 session. */
+    public static final Instant DURING_HOURS = Instant.parse("2024-06-12T18:00:00Z");
+
+    protected static final String TESTER = Jwt.issue("tester", SECRET, 3600);
+    protected static final String ALICE = Jwt.issue("alice", SECRET, 3600);
+    protected static final String BOB = Jwt.issue("bob", SECRET, 3600);
+
+    /** A token for a dedicated owner, so owner-scoped lists hold exactly one test's data. */
+    protected static String tokenFor(String owner) {
+        return Jwt.issue(owner, SECRET, 3600);
+    }
+
+    @SuppressWarnings("resource")
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
+    @SuppressWarnings("resource")
+    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0");
+
+    protected static final WireMockServer EXCHANGE = new WireMockServer(options().dynamicPort());
+    protected static final WireMockServer PORTFOLIO = new WireMockServer(options().dynamicPort());
+    protected static final WireMockServer MARKET_DATA = new WireMockServer(options().dynamicPort());
+
+    protected static final KafkaProbe KAFKA_PROBE;
+
+    static {
+        POSTGRES.start();
+        KAFKA.start();
+        EXCHANGE.start();
+        PORTFOLIO.start();
+        MARKET_DATA.start();
+        KAFKA_PROBE = new KafkaProbe(KAFKA.getBootstrapServers());
+    }
+
+    @LocalServerPort
+    int port;
+
+    @Autowired
+    protected MutableClock clock;
+
+    @Autowired
+    protected OrderRepository repository;
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        registry.add("exchange.base-url", EXCHANGE::baseUrl);
+        registry.add("portfolio.base-url", PORTFOLIO::baseUrl);
+        registry.add("market-data.base-url", MARKET_DATA::baseUrl);
+    }
+
+    @BeforeEach
+    void resetStubsAndClock() {
+        EXCHANGE.resetAll();
+        PORTFOLIO.resetAll();
+        MARKET_DATA.resetAll();
+        EXCHANGE.stubFor(ExchangeStubs.acceptsOrders());
+        PORTFOLIO.stubFor(PortfolioStubs.holdsPlentyOfEverything());
+        MARKET_DATA.stubFor(MarketDataStubs.hasNoPrices());
+        clock.set(DURING_HOURS);
+    }
+
+    /** Every outbound call must hit a stub: a wrong URL/method fails the test instead of passing silently. */
+    @AfterEach
+    void noUnmatchedOutboundRequests() {
+        assertThat(EXCHANGE.findAllUnmatchedRequests()).isEmpty();
+        assertThat(PORTFOLIO.findAllUnmatchedRequests()).isEmpty();
+        assertThat(MARKET_DATA.findAllUnmatchedRequests()).isEmpty();
+    }
+
+    /** An unauthenticated JSON request to the running service. */
+    protected RequestSpecification api() {
+        return RestAssured.given()
+                .baseUri("http://localhost")
+                .port(port)
+                .contentType(ContentType.JSON);
+    }
+
+    /** A JSON request carrying {@code Authorization: Bearer <token>}. */
+    protected RequestSpecification api(String token) {
+        return api().header("Authorization", "Bearer " + token);
+    }
+
+    /** Places an order (expecting 201) and returns the response — setup for tests about later steps. */
+    protected OrderResponse place(String token, String body) {
+        String response = api(token).body(body).post("/orders")
+                .then().statusCode(201)
+                .extract().asString();
+        return Json.read(response, OrderResponse.class);
+    }
+
+    protected OrderStatus statusOf(String orderId) {
+        return repository.findById(UUID.fromString(orderId)).orElseThrow().getStatus();
+    }
+}

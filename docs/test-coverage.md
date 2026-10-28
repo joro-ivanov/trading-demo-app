@@ -221,9 +221,24 @@ Examples:
 
 Typical tooling:
 
-- Maven Failsafe
-- Testcontainers
-- WireMock where an external dependency must be controlled
+- Maven Failsafe (+ JaCoCo: `services/<svc>/target/site/jacoco-it/`)
+- Testcontainers (singleton Postgres / Kafka / Redis per service)
+- WireMock for the external HTTP/WS dependencies only; nothing internal is mocked (ArchUnit-enforced)
+- REST-Assured over the real HTTP port (RANDOM_PORT)
+
+One class per endpoint or Kafka listener, under `<service>/src/test/java/.../it/`, with plumbing
+in `it/harness/`:
+
+| Service | Classes (executed cases) | Total |
+|---|---|---|
+| auth | `LoginIT` (5), `RegisterIT` (14), `UsersIT` (5) | 24 |
+| order | `PlaceOrderIT` (40), `CancelOrderIT` (6), `OrderHistoryIT` (2), `OrderOutcomeConsumerIT` (4) | 52 |
+| market-data | `PriceIT` (2), `ExchangeFeedIT` (1), `OrderMatchingIT` (16) | 19 |
+| portfolio | `PortfolioIT` (1), `HoldingsIT` (2), `FillsIT` (2), `BalanceIT` (2), `DepositIT` (3), `WithdrawIT` (2), `FillsListenerIT` (9), `PriceTicksListenerIT` (8) | 29 |
+| notification | `StompHandshakeIT` (6), `PriceTickPushIT` (3), `FillPushIT` (1) | 10 |
+
+New or changed endpoints are covered with `/it-gen` in Claude Code (`.claude/skills/it-gen/`), which
+only analyses the services/endpoints that changed.
 
 ### 3. Frontend Component Tests
 

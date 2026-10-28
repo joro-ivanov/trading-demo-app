@@ -9,18 +9,37 @@ Recipes for each kind of test in this repo. Conventions (enforced by PMD + ArchU
 
 ## 1. Per-service integration test (Testcontainers + WireMock)
 
-Boot one service against real infrastructure; mock only the external exchange.
+Boot one service against real infrastructure; mock **only communication with other systems**
+(other services' HTTP APIs, the exchange). Nothing internal is mocked: no Mockito / `@MockitoBean`
+(enforced by `<Svc>IntegrationTestArchitectureTest`).
 
-- `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `@Testcontainers`.
-- Real infra as `@Container` (Postgres / Confluent cp-kafka / Redis). Wire it with
-  `@DynamicPropertySource` (`spring.datasource.*`, `spring.kafka.bootstrap-servers`, `spring.data.redis.*`).
-- The exchange is a `WireMockServer` (REST stub) and/or a WireMock **WS** message stub.
-- Drive REST with **REST-Assured**; assert Kafka output with `KafkaTestUtils`.
-- Send a JWT: `Jwt.issue("tester", SECRET, 300)` → `Authorization: Bearer …`; add a no-token → **401** test.
+Layout: one class per endpoint or Kafka listener, plumbing in `it/harness/`:
 
-Named `*IT` → run by **Failsafe** in `verify` (not Surefire/`test`). Examples: `OrderServiceIT`,
-`MarketDataServiceIT`, `PortfolioServiceIT`, `AuthServiceIT`, `NotificationServiceIT`. The fast
-`*ArchitectureTest` (ArchUnit) checks stay `*Test` (Surefire).
+```
+services/<svc>/src/test/java/com/example/demo/<pkg>/it/
+  PlaceOrderIT.java  CancelOrderIT.java  OrderHistoryIT.java  OrderOutcomeConsumerIT.java …
+  harness/<Svc>ITBase.java   # singleton containers + WireMock, properties, clock, REST-Assured spec, tokens
+  harness/KafkaProbe.java    # produce / await records (the polling loop lives here, not in tests)
+  harness/stubs/*Stubs.java  # one fixture per external dependency, behaviour-named, provider-shaped JSON
+```
+
+- `@SpringBootTest(webEnvironment = RANDOM_PORT)` on the base class; drive the API over real HTTP
+  with **REST-Assured** (`api()` / `api(token)`).
+- Real infra (Postgres / Confluent cp-kafka / Redis) as **singleton** containers started in a static
+  block, so all `*IT` classes of a service share them and the cached Spring context. Wire them with
+  `@DynamicPropertySource`.
+- External HTTP is a `WireMockServer`; the exchange feed is a WireMock **WS** message stub. Reset
+  in `@BeforeEach`, assert no unmatched requests in `@AfterEach`.
+- Time via a `@Primary` `MutableClock` (market-hours cases use exact boundary instants).
+- Send a JWT: `Jwt.issue("tester", SECRET, 300)` → `Authorization: Bearer …`; cover missing,
+  malformed, wrong-signature and expired tokens → **401**.
+
+Named `*IT` → run by **Failsafe** in `verify` (not Surefire/`test`). The fast `*ArchitectureTest`
+(ArchUnit) checks stay `*Test` (Surefire). Failsafe runs with JaCoCo: the IT coverage report is
+`services/<svc>/target/site/jacoco-it/index.html`.
+
+New or changed endpoints: run **`/it-gen`** in Claude Code. It generates, reviews and scores the ITs
+for only the changed services/endpoints (`.claude/skills/it-gen/`).
 
 ## 2. WireMock WebSocket mock (the exchange feed)
 
@@ -80,6 +99,22 @@ Methods are `static`, return `ApiResponse`, **no validation** (negative cases mu
 ## 7. PMD / Checkstyle / FE gates
 
 - PMD bans control statements in `*Test`/`*IT` sources (`build/pmd/test-conventions.xml`).
+  The backend service modules add `build/pmd/it-conventions.xml`, which also bans `&&`, `||`, `!`, `==`, `!=`
+  and `forEach`/`filter`/`ifPresent`/`orElseGet` callbacks: one scenario per test, and
+  `@ParameterizedTest` wherever cases differ only in data. `harness/` packages are exempt.
+- ArchUnit (`<Svc>IntegrationTestArchitectureTest`, one per service) forbids **weak or
+  non-deterministic assertions** in ITs:
+  - AssertJ partial, range and presence-only assertions (`contains*`, `doesNotContain*`, `startsWith`,
+    `isGreaterThan`, `isBetween`, `isCloseTo`, `isAfter`, `isNotNull`, `isNotBlank`, `isNotEmpty`, `isNotEqualTo`, …)
+  - the Hamcrest equivalents in REST-Assured `body(...)`
+  - WireMock `containing`/`matching`
+
+  Assert exact values instead (`isEqualTo`, `containsExactly[InAnyOrder]`, `isEqualByComparingTo`,
+  `isEmpty`, `equalToJson`), and make the data deterministic:
+  - a dedicated owner/JWT subject per test, so owner-scoped lists are exact
+  - a seed reset for global tables
+  - a fixed clock
+  - decoded JWT claims instead of `isNotBlank`
 - Checkstyle: import hygiene (`build/checkstyle/checkstyle.xml`).
 - Frontend: `npm run lint` (Rules of Hooks + boundaries) and `npm run depcruise` (no cycles,
   data layer must not import UI).

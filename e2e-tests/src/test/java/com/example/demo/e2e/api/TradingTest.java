@@ -293,7 +293,7 @@ class TradingTest extends BaseApiTest {
     }
 
     // Both sides exercised end-to-end: this proves the order→match→fill→WS-push chain carries a SELL
-    // as well as a BUY. The SELL position arithmetic itself is owned by PortfolioServiceIT (no overlap).
+    // as well as a BUY. The SELL position arithmetic itself is owned by the portfolio-service FillsListenerIT (no overlap).
     @RunDuringMarketHours
     @ParameterizedTest(name = "{0} fill for {1} is pushed over WebSocket")
     @MethodSource("webSocketFillOrders")
@@ -396,7 +396,7 @@ class TradingTest extends BaseApiTest {
 
     // The one whole-chain price seam: a marketable LIMIT BUY (limit far above market) must fill at the
     // MARKET price across order→matcher→fill→portfolio, not at its stated limit. The directional
-    // matcher logic itself is owned by MarketDataServiceIT (no overlap).
+    // matcher logic itself is owned by the market-data-service OrderMatchingIT (no overlap).
     @RunDuringMarketHours
     @Test
     void limitOrderFillsAtMarketPriceNotAtTheLimitAcrossTheChain() {
@@ -434,7 +434,7 @@ class TradingTest extends BaseApiTest {
 
     // A non-marketable LIMIT is a valid order (accepted, SUBMITTED) but never fills — the matcher rests
     // it, so it is saved with status PENDING. (Marketable typed fills are covered above; the matcher's
-    // directional logic is owned by MarketDataServiceIT.)
+    // directional logic is owned by the market-data-service OrderMatchingIT.)
     @RunDuringMarketHours
     void pendingLimitOrderIsSubmittedAndResolvesToPending() {
         Allure.step("Place a non-marketable LIMIT BUY 1 GOOG (0.01)");
@@ -461,7 +461,7 @@ class TradingTest extends BaseApiTest {
 
     // A non-marketable STOP is a valid order (accepted, SUBMITTED) but never fills — the matcher rests
     // it, so it is saved with status PENDING. (Marketable typed fills are covered above; the matcher's
-    // directional logic is owned by MarketDataServiceIT.)
+    // directional logic is owned by the market-data-service OrderMatchingIT.)
     @RunDuringMarketHours
     void pendingStopOrderIsSubmittedAndResolvesToPending() {
         Allure.step("Place a non-marketable STOP BUY 1 GOOG (1000000)");

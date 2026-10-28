@@ -18,7 +18,7 @@ import io.qameta.allure.Allure;
 
 /**
  * Auth API e2e (docs/DESIGN.md §7.2, §8) — registration + negative login against the running stack.
- * Black-box, not market-hours gated. The exhaustive validation matrix lives in AuthServiceIT; here we
+ * Black-box, not market-hours gated. The exhaustive validation matrix lives in the auth-service ITs (RegisterIT/LoginIT); here we
  * prove the deployed wiring: register → login, and the representative 409 / 400 / 401 paths.
  */
 @Tag("api")

@@ -887,3 +887,23 @@ All other dependencies: **latest stable** at scaffold time, versions centralized
       deposit→BUY) + `FundsUiE2eIT` (register → $0 → deposit → balance). Full `mvn verify` green; FE
       unit 48 + component 10; all e2e verified live.
 ```
+25. ✅ **M25 — Per-service ITs restructured for change-scoped generation (`/it-gen`):**
+    - **One class per endpoint / Kafka listener** under `<service>/it/` (e.g. `PlaceOrderIT`,
+      `CancelOrderIT`, `FillsListenerIT`, `StompHandshakeIT`), replacing one `<Svc>ServiceIT` per service,
+      so a changed endpoint maps to exactly one test class.
+    - **Real HTTP**: MockMvc → REST-Assured on `RANDOM_PORT`. Real servlet behaviour surfaced one
+      difference: an exchange 5xx now returns a real **500** (MockMvc rethrew the exception).
+    - **`it/harness/`**: singleton Testcontainers (shared context across classes), WireMock servers +
+      behaviour-named stub fixtures shaped like the provider DTOs, `MutableClock`, `KafkaProbe` (snapshot
+      reads/polling) and `StompProbe` (sentinel handshake proves a SUBSCRIBE is live, since the simple
+      broker sends no RECEIPT for it). Unmatched WireMock requests fail the test.
+    - **Stricter gates**: `build/pmd/it-conventions.xml` (service modules) bans `&&`, `||`, `!`, `==`, `!=`
+      and `forEach`/`filter`/`ifPresent`/`orElseGet` in tests; `<Svc>IntegrationTestArchitectureTest`
+      forbids Mockito/`@MockitoBean` in ITs, keeps `*IT` in the `it` package and bans weak/non-deterministic
+      assertions (`contains`, ranges, `isNotNull`/`isNotBlank`, Hamcrest `containsString`, WireMock
+      `containing`): lists are made exact with a dedicated owner per test, auth resets to the seed users
+      before each test, and login/registration tokens are verified by their decoded claims; JaCoCo IT coverage
+      (`target/site/jacoco-it/`).
+    - **Tests.** ITs 127→134, all assertions kept or tightened (exact parsed Kafka/STOMP payloads instead
+      of `contains`, exact error bodies, no-fill proven by the resting event instead of a fixed wait).
+      Each service green on 3 consecutive runs; full `mvn verify` of common + services green.
