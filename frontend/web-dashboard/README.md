@@ -109,6 +109,16 @@ npm run dev -- --host 0.0.0.0
 
 Then open the forwarded port `5173` from the editor.
 
+### The nginx proxy (`nginx.conf`)
+
+The production image serves the bundle with nginx, which also reverse-proxies `/api/*` and `/ws` to the
+backend services. It resolves their hostnames through Docker's embedded DNS **at request time**
+(`resolver 127.0.0.11 valid=10s`, with variable `proxy_pass`). So recreating or rebuilding a backend
+container doesn't break the dashboard: nginx follows the new IP within about 10 s. Before this, nginx
+cached the IPs it saw at startup and served 502s until it was restarted. Because a variable
+`proxy_pass` doesn't map the location prefix, each `/api/...` location strips `/api` explicitly
+(`/api/auth/login` → `/auth/login`).
+
 ### Rebuild the frontend used by the local app
 
 Building the frontend inside the devcontainer updates only the local Vite bundle:
