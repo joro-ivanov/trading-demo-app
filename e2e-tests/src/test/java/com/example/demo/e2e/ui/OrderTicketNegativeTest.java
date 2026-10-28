@@ -1,5 +1,6 @@
 package com.example.demo.e2e.ui;
 
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CREATED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
@@ -29,6 +30,10 @@ import io.qameta.allure.Allure;
 @ExtendWith(RequireRunningBackend.class)
 @ExtendWith(PlaywrightLifecycle.class)
 class OrderTicketNegativeTest extends BaseUiTest {
+
+    /** Below the quantity field's minimum. */
+    private static final String ZERO_QUANTITY = "0";
+    private static final String VALID_QUANTITY = "10";
 
     private OrderTicketPage openTicket() {
         loginAsPrimaryUser();
@@ -108,9 +113,9 @@ class OrderTicketNegativeTest extends BaseUiTest {
     @Test
     void theQuantityFieldRejectsBelowItsMinimum() {
         OrderTicketPage ticket = openTicket();
-        ticket.fillQuantity("0");
+        ticket.fillQuantity(ZERO_QUANTITY);
         assertThat(ticket.quantityIsValid()).isFalse();
-        ticket.fillQuantity("10");
+        ticket.fillQuantity(VALID_QUANTITY);
         assertThat(ticket.quantityIsValid()).isTrue();
     }
 
@@ -120,7 +125,7 @@ class OrderTicketNegativeTest extends BaseUiTest {
     void aSuccessfulOrderIsSilentOnTheTicket() {
         OrderTicketPage ticket = openTicket();
         Allure.step("The order POST succeeds (201)");
-        ticket.stubOrders(201);
+        ticket.stubOrders(CREATED);
         ticket.clickPlace();
         ticket.awaitButtonIdle();
         assertSoftly(softly -> {

@@ -62,6 +62,23 @@
 
     <build>
         <plugins>
+            <!-- No logic operators/callbacks in tests, on top of the shared control-flow ban. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <configuration>
+                    <rulesets>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/test-conventions.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/it-conventions.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-internal-server-error.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-magic-values.xml</ruleset>
+                    </rulesets>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

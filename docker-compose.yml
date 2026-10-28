@@ -98,6 +98,8 @@ services:
       PORTFOLIO_BASE_URL: http://portfolio-service:8083
       # market-data-service for the latest price used to value a BUY (funds guard)
       MARKET_DATA_BASE_URL: http://market-data-service:8081
+      # risk-service for the pre-trade risk check (per-user notional / position limits; fails closed)
+      RISK_BASE_URL: http://risk-service:8087
       # Working-hours gate. Defaults ON (real session, matches the e2e @RunDuringMarketHours gate).
       # Override for any-time verification:  TRADING_MARKET_HOURS_ENABLED=false docker compose up
       TRADING_MARKET_HOURS_ENABLED: ${TRADING_MARKET_HOURS_ENABLED:-true}
@@ -151,6 +153,53 @@ services:
       - "8084:8084"
     depends_on:
       kafka:
+        condition: service_healthy
+
+  # Price alerts: CRUD over REST; triggered alerts are published to Kafka (alerts.triggered) and
+  # pushed to the user over WebSocket by notification-service (/user/queue/alerts).
+  alert-service:
+    build: ./services/alert-service
+    environment:
+      APP_CLOCK_FIXED_INSTANT: ${APP_CLOCK_FIXED_INSTANT:-}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/alertdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MARKET_DATA_BASE_URL: http://market-data-service:8081
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  # Per-user watchlists, enriched with the latest prices from market-data.
+  watchlist-service:
+    build: ./services/watchlist-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/watchlistdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      MARKET_DATA_BASE_URL: http://market-data-service:8081
+    ports:
+      - "8086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Per-user risk limits + the pre-trade check order-service calls before routing an order.
+  risk-service:
+    build: ./services/risk-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/riskdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      PORTFOLIO_BASE_URL: http://portfolio-service:8083
+    ports:
+      - "8087:8087"
+    depends_on:
+      postgres:
         condition: service_healthy
 
   web-dashboard:

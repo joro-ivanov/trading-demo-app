@@ -200,8 +200,10 @@ Typical flow:
 
 The devcontainer currently:
 
-- uses the `mcr.microsoft.com/devcontainers/typescript-node:24` image
-- runs `npm install` automatically after creation
+- uses the `mcr.microsoft.com/devcontainers/typescript-node:24` image (Node 24 everywhere: `.nvmrc`,
+  `package.json` `engines`, the devcontainer and the production `Dockerfile`)
+- installs Mozilla's official Firefox + geckodriver for the WDIO component tests (`FIREFOX_BIN` /
+  `GECKODRIVER_PATH`; amd64 and arm64), then runs `npm install`
 - forwards port `5173` for the Vite dev server
 
 Common frontend commands:
@@ -213,6 +215,14 @@ npm run lint         # ESLint (Rules of Hooks + layer boundaries)
 npm run test:unit    # Vitest
 npm run test:component   # WDIO component tests
 npm run depcruise    # dependency-cruiser boundary check
+```
+
+Or run all of them in a throwaway container, with nothing installed on the host (details in
+[frontend/web-dashboard/README.md](frontend/web-dashboard/README.md)):
+
+```bash
+cd frontend/web-dashboard
+docker build -f Dockerfile.test -t web-dashboard-tests . && docker run --rm web-dashboard-tests
 ```
 
 Frontend rule:
@@ -287,7 +297,10 @@ Most of the test stack relies on Docker:
 | `services/order-service` | Place/cancel orders → Postgres, route to exchange (REST), publish `orders.submitted` |
 | `services/market-data-service` | Consume exchange WS feed → cache (Redis) + `price.ticks`; match orders → `fills` |
 | `services/portfolio-service` | Build positions/avg-price + P&L (`Money`) from `fills` + `price.ticks` |
-| `services/notification-service` | STOMP-over-SockJS gateway; fan out ticks/fills (JWT-authenticated CONNECT) |
+| `services/notification-service` | STOMP-over-SockJS gateway; fan out ticks/fills/triggered alerts (JWT-authenticated CONNECT) |
+| `services/alert-service` | Price alerts (REST CRUD); fires on `price.ticks`, publishes `alerts.triggered` → pushed over WS to `/user/queue/alerts` |
+| `services/watchlist-service` | Per-user watchlists enriched with batch prices from market-data |
+| `services/risk-service` | Per-user risk limits + the pre-trade `POST /risk/check` order-service calls (fails closed) |
 | `frontend/web-dashboard` | React 19 dashboard: live ticker, order ticket, portfolio, fills |
 | `integration-tests` | Cross-service flagship (boots services as subprocesses) |
 | `e2e-tests` | The e2e **framework** + API/WS e2e + Playwright UI e2e |
@@ -301,6 +314,9 @@ Module-specific notes:
 - [`services/market-data-service/README.md`](services/market-data-service/README.md)
 - [`services/portfolio-service/README.md`](services/portfolio-service/README.md)
 - [`services/notification-service/README.md`](services/notification-service/README.md)
+- [`services/alert-service/README.md`](services/alert-service/README.md)
+- [`services/watchlist-service/README.md`](services/watchlist-service/README.md)
+- [`services/risk-service/README.md`](services/risk-service/README.md)
 - [`integration-tests/README.md`](integration-tests/README.md)
 - [`e2e-tests/README.md`](e2e-tests/README.md)
 - [`frontend/web-dashboard/README.md`](frontend/web-dashboard/README.md)
@@ -362,9 +378,13 @@ stack.
 
 ## Test layers
 
-1. **Per-service integration** (`*IT`, Failsafe, `mvn verify`) — each service against real infra in
-   Testcontainers, with the exchange mocked by WireMock (REST + WS). (`mvn test` runs only the fast
-   unit + `*ArchitectureTest` ArchUnit checks via Surefire.)
+1. **Per-service integration** (`*IT`, Failsafe, `mvn verify`): each service against real Postgres,
+   Kafka and Redis in Testcontainers, with only its external dependencies (other services, the
+   exchange REST + WS feed) mocked by WireMock. Nothing internal is mocked. One class per endpoint or
+   listener under `<service>/it/`, plumbing in `it/harness/`. Container logs go to
+   `target/container-logs/`. (`mvn test` runs only the fast unit and `*ArchitectureTest` ArchUnit
+   checks via Surefire.) New and changed endpoints get their ITs from the `/it-gen` Claude Code
+   workflow.
 2. **Cross-service flagship** (`integration-tests`) — boots order + market-data + portfolio +
    notification as subprocesses and asserts the whole `order → fill → portfolio → STOMP push` chain.
 3. **API + WS e2e** (`e2e-tests`, `-Papi-e2e`) — black-box via the facade service objects against a
@@ -377,11 +397,147 @@ For the detailed e2e execution model and reporting behavior, see
 
 ## Quality gates
 
-- **ArchUnit** — service layering + e2e-framework invariants (engine isolation, no-defensive,
-  records, static service methods, explicit `Page` constructors).
-- **PMD** — bans control statements in test sources (linear setup → action → assert).
-- **Checkstyle** — Java import hygiene.
-- **dependency-cruiser + ESLint** — frontend layer boundaries + Rules of Hooks.
+Four static checks guard the Java code. Each looks at the code at a different level, so each
+catches what the others cannot:
+
+| Check | Looks at | Catches | Runs in |
+|---|---|---|---|
+| **Checkstyle** | source form | star / unused / redundant imports, one top-level class per file | `mvn verify` (fails the build) |
+| **PMD** | syntax tree | logic in tests: control statements everywhere; also `&&` `\|\|` `!` `==` `!=` and `forEach`/`filter`/`ifPresent` callbacks in the service modules; magic values (unnamed strings/numbers) in every test; producing or expecting HTTP 500 in the backend | `mvn verify` (fails the build) |
+| **ArchUnit** | compiled classes and calls | layering, no field injection or `java.util.Date`; in ITs no Mockito, `*IT` in the `it` package, no weak assertions | `mvn test` (unit tests, fails the build) |
+| **TestLint** | source text (regex) | a fast approximation of the PMD and ArchUnit test rules, incl. magic values | `/it-gen` gate and on demand |
+
+- **Checkstyle** (`build/checkstyle/checkstyle.xml`) is a style checker. Here it only enforces import
+  hygiene and one top-level class per file: cheap consistency that catches leftovers such as an
+  unused import after a refactor.
+- **PMD** parses source into a syntax tree and matches XPath rules against it.
+  `build/pmd/test-conventions.xml` (all modules) bans `if/else`, `for`, `while`, `switch`, ternary and
+  `try` in tests. `build/pmd/it-conventions.xml` (backend services) adds boolean and comparison
+  operators and callback loops. Production code and `harness/` helper packages are exempt. The goal is
+  linear tests (setup → action → assert): one scenario per test, and `@ParameterizedTest` wherever
+  cases differ only in data.
+  `build/pmd/no-magic-values.xml` (every module, e2e included) bans **magic values** in tests: every
+  string and number a test uses must be named. That means a constant, a local variable, or an
+  annotation data table such as `@CsvSource`. `0`, `1`, `""` and description prose (`Allure.step`,
+  assertion descriptions, `AssertionError` messages) are allowed inline. ArchUnit can't enforce this,
+  because the compiler inlines constants into the bytecode.
+- **ArchUnit** loads the compiled bytecode and checks dependencies and method calls as JUnit tests.
+  It sees what source parsing can't: which class owns a called method, annotations on fields, and
+  calls inside lambdas.
+  - `<Svc>ArchitectureTest` covers production layering.
+  - `<Svc>IntegrationTestArchitectureTest` forbids internal mocking in ITs (only external
+    communication is stubbed, with WireMock), keeps `*IT` in the `it` package and forbids expecting a 500.
+  - `<Module>TestAssertionsArchitectureTest`, generated from one template into every backend module
+    (the services, common, integration-tests and wiremock-ws-spike), forbids weak or non-deterministic
+    assertions in *all* their tests: unit, ArchUnit and ITs. The banned calls are AssertJ
+    `contains`/`isNotNull`/`isGreaterThan`…, Hamcrest `containsString`… and WireMock `containing`….
+    e2e is excluded because it asserts live values on a running stack.
+  - The e2e module has its own framework invariants: engine isolation, records, static service
+    methods, explicit `Page` constructors.
+- **TestLint** (`.claude/skills/it-gen/scripts/TestLint.java`) is a dependency-free, single-file Java
+  script: `java TestLint.java <path>`. It returns `file:line` findings in under a second, with no Maven
+  or Docker. The `/it-gen` workflow runs it after every writer round. PMD and ArchUnit remain the
+  authority; TestLint is only fast feedback.
+- **dependency-cruiser + ESLint** cover the frontend: layer boundaries and the Rules of Hooks.
+
+None of these can tell whether an expected value is *correct*. That needs judgment, which is why
+`/it-gen` also runs an independent reviewer agent that checks expectations against the production
+code.
+
+### Log analysis: a green run can still hide an error
+
+A test can pass while the service logs an exception it swallowed, a rolled-back transaction or a
+Kafka deserialization failure, or while Postgres logs a constraint violation. **LogScan**
+(`.claude/skills/it-gen/scripts/LogScan.java`, another dependency-free single-file Java script) reads
+three kinds of log from an IT run:
+- **Service and test logs:** Failsafe writes each IT class's output to its own file when you add
+  `-Dmaven.test.redirectTestOutputToFile=true` (`target/failsafe-reports/<Class>-output.txt`).
+- **Container logs:** every Testcontainers container (Postgres, Kafka, Redis) is started with
+  Testcontainers' `Slf4jLogConsumer` on a `container.<name>` logger. `logback-test.xml` writes each one
+  verbatim to `target/container-logs/<name>.log`, separate from the service log.
+
+```bash
+mvn -pl services/order-service verify -Dmaven.test.redirectTestOutputToFile=true
+java .claude/skills/it-gen/scripts/LogScan.java services/order-service/target/failsafe-reports services/order-service/target/container-logs
+# compare reruns: java LogScan.java run1=<dir> run2=<dir> run3=<dir>
+```
+
+It reports every ERROR, WARN and exception, with:
+- its cause chain and the first `com.example.demo` stack frame
+- duplicates grouped by root cause (ids, numbers and timestamps normalised)
+- counts per run and per test class (or `container:<name>`)
+
+Container logs are read in their native formats: Postgres `ERROR/FATAL/WARNING` (with
+`DETAIL`/`STATEMENT`), Kafka log4j and Redis. A request that ended in an unhandled exception is flagged
+`unhandledHttp500: true`.
+
+A finding seen in only some reruns points to nondeterminism. LogScan filters nothing. In `/it-gen`
+the reviewer agent classifies each finding: it is `expected` only when a test deliberately provokes
+it, and everything else is `unexpected`. Unexpected findings go to the user just like failing tests,
+and all findings appear in the final report.
+
+### HTTP 500 is never expected
+
+A 500 means an unforeseen bug in the service, so the backend never returns one on purpose and no test
+expects one:
+
+| Situation | Status |
+|---|---|
+| a dependency or the database is unreachable or timed out (an outage) | **503** |
+| a dependency answered with an error status or an unreadable body | **502** |
+| a unique-constraint or concurrent-write conflict | **409** |
+| bad input | **400** |
+
+Every outbound client is built with `common.http.HttpClients.withTimeouts(connect, read)` and
+translates failures with `common.http.Downstream`. `common.security.ApiErrorHandler` is the safety
+net. The timeouts make the 503 real: a dependency that hangs fails the call after its read timeout,
+instead of hanging the request. Each dependency's timeouts are a validated `*Properties` record in
+`application.yaml`, overridable by env var:
+
+| Caller → dependency | Connect | Read | Env override |
+|---|---|---|---|
+| order → exchange | 2s | 5s (routing places the order) | `EXCHANGE_CONNECT_TIMEOUT` / `EXCHANGE_READ_TIMEOUT` |
+| order → portfolio, market-data, risk | 2s | 3s | `PORTFOLIO_…`, `MARKET_DATA_…`, `RISK_…` |
+| alert → market-data | 2s | 3s | `MARKET_DATA_CONNECT_TIMEOUT` / `MARKET_DATA_READ_TIMEOUT` |
+| watchlist → market-data | 1s | 2s (degrades to `pricesAvailable: false`) | `MARKET_DATA_CONNECT_TIMEOUT` / `MARKET_DATA_READ_TIMEOUT` |
+| risk → portfolio | 2s | 3s | `PORTFOLIO_CONNECT_TIMEOUT` / `PORTFOLIO_READ_TIMEOUT` |
+
+The rule is enforced statically:
+- PMD `build/pmd/no-internal-server-error.xml`, on production and test code: `statusCode(500)`,
+  `INTERNAL_SERVER_ERROR`, `internalServerError()`, `@ResponseStatus(INTERNAL_SERVER_ERROR)`
+- ArchUnit `neverProduceInternalServerError` (production bytecode) and
+  `integrationTestsNeverExpectInternalServerError`
+- TestLint
+
+At runtime, LogScan's `unhandledHttp500` flags any request that still ended in a 500. That's a product
+defect to fix, never a status to assert. Test stubs may still simulate a *dependency* answering 500:
+that's the scenario, and the service must answer 502.
+
+### When a check or test fails: report it, never hide it
+
+A failing gate (Checkstyle, PMD, ArchUnit, TestLint) or functional test (unit, per-service IT,
+cross-service, e2e) may be revealing a real defect. It is **never** made to pass by changing the test
+or the rule. The only exception is a genuine defect in the test code itself, such as a compile error,
+an unused import, or a stub missing for a new dependency. It may be fixed only when the fix doesn't
+change what the test verifies, and the fix is reported.
+
+Everything else goes to a person, with:
+- what the test verifies and why (the code line or requirement it is based on)
+- exactly what fails (expected vs actual, or the rule and message)
+- an analysis of the likely cause: product defect, ambiguous behaviour, wrong test assumption, or
+  environment
+- the options
+
+These require an explicit human decision:
+- changing an expected value to the observed behaviour
+- weakening or removing an assertion, or deleting a case
+- `@Disabled`
+- rule suppressions (`@SuppressWarnings("PMD…")`, `// NOPMD`, `CHECKSTYLE:OFF`, ArchUnit freezing)
+- edits to the gate configuration
+
+The Claude Code setup enforces this in `CLAUDE.md` and the `/it-gen` agents. Its writer reports such
+failures instead of fixing them, the orchestrator asks the user, and its reviewer scores any hidden
+failure 0.
 
 Security: all services validate a shared-secret HS256 JWT (issued by `auth-service`); the
 notification WebSocket validates the token on the STOMP CONNECT frame.

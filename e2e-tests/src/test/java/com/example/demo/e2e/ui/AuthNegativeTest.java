@@ -1,5 +1,8 @@
 package com.example.demo.e2e.ui;
 
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CONFLICT;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CREATED;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNAUTHORIZED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
@@ -25,14 +28,26 @@ import io.qameta.allure.Allure;
 @ExtendWith(PlaywrightLifecycle.class)
 class AuthNegativeTest extends BaseUiTest {
 
+    private static final String WRONG_PASSWORD = "wrong-password";
+    private static final String VALID_USERNAME = "validuser";
+    private static final String INVALID_EMAIL = "not-an-email";
+    private static final String VALID_EMAIL = "valid@" + EMAIL_DOMAIN;
+    /** Shorter than the registration form's minimum password length. */
+    private static final String SHORT_PASSWORD = "short";
+    private static final String MISMATCHED_CONFIRMATION = "different";
+    private static final String PASSWORDS_DO_NOT_MATCH = "Passwords do not match.";
+    /** Turns a username into a second, different email address on the same domain. */
+    private static final String NEW_EMAIL_SUFFIX = ".new@";
+    private static final String USERNAME_TAKEN_MESSAGE = "That username is already taken.";
+
     // ── login ────────────────────────────────────────────────────────────────
 
     @Test
     void rejectedLoginShowsAnErrorAndDoesNotEnterTheApp() {
         LoginPage login = openLoginPage();
         Allure.step("The login POST is rejected with 401");
-        login.stubLogin(401);
-        login.fillCredentials(username, "wrong-password").submit();
+        login.stubLogin(UNAUTHORIZED);
+        login.fillCredentials(username, WRONG_PASSWORD).submit();
 
         login.awaitLoginError();
         assertThat(login.loginRequestCount()).isEqualTo(1);
@@ -43,9 +58,9 @@ class AuthNegativeTest extends BaseUiTest {
     @Test
     void invalidEmailIsBlockedByNativeValidationAndSendsNoRequest() {
         RegistrationPage register = openRegistrationPage();
-        register.stubRegister(201);
+        register.stubRegister(CREATED);
         Allure.step("Fill a syntactically invalid email and submit");
-        register.fill("validuser", "not-an-email", REGISTERED_USER_PASSWORD, REGISTERED_USER_PASSWORD).submit();
+        register.fill(VALID_USERNAME, INVALID_EMAIL, REGISTERED_USER_PASSWORD, REGISTERED_USER_PASSWORD).submit();
 
         assertSoftly(softly -> {
             softly.assertThat(register.emailIsValid()).isFalse();
@@ -56,9 +71,9 @@ class AuthNegativeTest extends BaseUiTest {
     @Test
     void shortPasswordIsBlockedByNativeValidation() {
         RegistrationPage register = openRegistrationPage();
-        register.stubRegister(201);
+        register.stubRegister(CREATED);
         Allure.step("A password under the 8-char minimum is invalid and submits nothing");
-        register.fill("validuser", "valid@" + EMAIL_DOMAIN, "short", "short").submit();
+        register.fill(VALID_USERNAME, VALID_EMAIL, SHORT_PASSWORD, SHORT_PASSWORD).submit();
 
         assertSoftly(softly -> {
             softly.assertThat(register.passwordIsValid()).isFalse();
@@ -69,11 +84,11 @@ class AuthNegativeTest extends BaseUiTest {
     @Test
     void confirmMismatchDisablesSubmitAndShowsAnError() {
         RegistrationPage register = openRegistrationPage();
-        register.stubRegister(201);
+        register.stubRegister(CREATED);
         Allure.step("Confirm password differs from password");
-        register.fill("validuser", "valid@" + EMAIL_DOMAIN, REGISTERED_USER_PASSWORD, "different");
+        register.fill(VALID_USERNAME, VALID_EMAIL, REGISTERED_USER_PASSWORD, MISMATCHED_CONFIRMATION);
 
-        register.awaitRegisterError("Passwords do not match.");
+        register.awaitRegisterError(PASSWORDS_DO_NOT_MATCH);
         assertSoftly(softly -> {
             softly.assertThat(register.submitDisabled()).isTrue();
             softly.assertThat(register.registerRequestCount()).isEqualTo(0);
@@ -83,12 +98,12 @@ class AuthNegativeTest extends BaseUiTest {
     @Test
     void duplicateUsernameShowsAConflictMessage() {
         RegistrationPage register = openRegistrationPage();
-        register.stubRegister(409);
+        register.stubRegister(CONFLICT);
         Allure.step("The register POST returns 409");
-        register.fill(username, username + ".new@" + EMAIL_DOMAIN, REGISTERED_USER_PASSWORD, REGISTERED_USER_PASSWORD)
+        register.fill(username, username + NEW_EMAIL_SUFFIX + EMAIL_DOMAIN, REGISTERED_USER_PASSWORD, REGISTERED_USER_PASSWORD)
                 .submit();
 
-        register.awaitRegisterError("That username is already taken.");
+        register.awaitRegisterError(USERNAME_TAKEN_MESSAGE);
     }
 
     // ── registration happy path (real backend) ────────────────────────────────

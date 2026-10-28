@@ -37,6 +37,11 @@ public class OrderController {
                 .body(orderService.place(request, authentication.getName()));
     }
 
+    @GetMapping("/{id}")
+    public OrderResponse get(@PathVariable UUID id, Authentication authentication) {
+        return orderService.get(id, authentication.getName());
+    }
+
     @DeleteMapping("/{id}")
     public OrderResponse cancel(@PathVariable UUID id, Authentication authentication) {
         return orderService.cancel(id, authentication.getName());

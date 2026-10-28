@@ -24,6 +24,8 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CREATED;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
@@ -33,22 +35,26 @@ import static org.awaitility.Awaitility.await;
 @ExtendWith(PlaywrightLifecycle.class)
 class LiveFillsTest extends BaseUiTest {
 
+    private static final String UI_USER_PREFIX = "fillsui";
+    private static final String API_USER_PREFIX = "fillsapi";
+    /** One recent-fill row as the dashboard renders it: time, side, quantity, symbol and price. */
+    private static final String DASHBOARD_FILL_FORMAT = "%s UTC %s %s %s @ %s";
     private static final DateTimeFormatter DASHBOARD_TIMESTAMP =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC);
 
     @RunDuringMarketHours
     @Test
     void liveFillsPanelShowsOnlyTheLoggedInUsersOwnFills() {
-        String uiUsername = uniqueUsername("fillsui");
-        String apiUsername = uniqueUsername("fillsapi");
+        String uiUsername = uniqueUsername(UI_USER_PREFIX);
+        String apiUsername = uniqueUsername(API_USER_PREFIX);
         ApiResponse uiRegistrationResponse = AuthService.register(
                 uiUsername, emailFor(uiUsername), REGISTERED_USER_PASSWORD);
         ApiResponse apiRegistrationResponse = AuthService.register(
                 apiUsername, emailFor(apiUsername), REGISTERED_USER_PASSWORD);
         Login uiUser = uiRegistrationResponse.as(Login.class);
         Login apiUser = apiRegistrationResponse.as(Login.class);
-        FundsService.deposit(uiUser.token(), new BigDecimal("10000"));
-        FundsService.deposit(apiUser.token(), new BigDecimal("10000"));
+        FundsService.deposit(uiUser.token(), DEFAULT_STARTING_CASH);
+        FundsService.deposit(apiUser.token(), DEFAULT_STARTING_CASH);
 
         Allure.step("Log in as the UI user and start with an empty fills panel");
         DashboardPage dashboard = openLoginPage().login(uiUsername, REGISTERED_USER_PASSWORD);
@@ -58,7 +64,7 @@ class LiveFillsTest extends BaseUiTest {
         ApiResponse apiOrderResponse = OrdersService.placeMarketOrder(
                 apiUser.token(), TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
         OrderResponse apiOrder = apiOrderResponse.as(OrderResponse.class);
-        assertThat(apiOrderResponse.statusCode()).isEqualTo(201);
+        assertThat(apiOrderResponse.statusCode()).isEqualTo(CREATED);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             List<Fill> apiFills = PortfolioService.recentFills(apiUser.token()).asList(Fill.class);
             assertSoftly(softly -> {
@@ -96,7 +102,7 @@ class LiveFillsTest extends BaseUiTest {
     }
 
     private String dashboardFillText(Fill fill) {
-        return "%s UTC %s %s %s @ %s".formatted(
+        return DASHBOARD_FILL_FORMAT.formatted(
                 DASHBOARD_TIMESTAMP.format(fill.filledAt()),
                 fill.side(),
                 fill.quantity().stripTrailingZeros().toPlainString(),

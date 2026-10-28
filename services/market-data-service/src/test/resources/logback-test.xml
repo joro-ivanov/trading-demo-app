@@ -10,6 +10,30 @@
     <logger name="org.eclipse.jetty" level="WARN"/>
     <logger name="org.apache.kafka" level="WARN"/>
     <logger name="org.java_websocket" level="WARN"/>
+    <!-- Container logs (Testcontainers Slf4jLogConsumer, logger "container.<name>") are written verbatim to
+         target/container-logs/<name>.log, separate from the service log; LogScan checks them. append=true: Spring Boot
+         re-initialises Logback when the context starts, after the containers have logged their startup;
+         the directory is cleared once per run by maven-clean-plugin (pre-integration-test). -->
+    <appender name="CONTAINER_KAFKA" class="ch.qos.logback.core.FileAppender">
+        <file>target/container-logs/kafka.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+    <logger name="container.kafka" level="INFO" additivity="false">
+        <appender-ref ref="CONTAINER_KAFKA"/>
+    </logger>
+    <appender name="CONTAINER_REDIS" class="ch.qos.logback.core.FileAppender">
+        <file>target/container-logs/redis.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+    <logger name="container.redis" level="INFO" additivity="false">
+        <appender-ref ref="CONTAINER_REDIS"/>
+    </logger>
     <root level="INFO">
         <appender-ref ref="STDOUT"/>
     </root>

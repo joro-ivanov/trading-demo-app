@@ -11,6 +11,10 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class MarketHoursTest {
 
+    private static final Instant OPENING_BELL = Instant.parse("2024-06-12T13:30:00Z");
+    private static final Instant LAST_SECOND_BEFORE_CLOSE = Instant.parse("2024-06-12T19:59:59Z");
+    private static final Instant CLOSING_BELL = Instant.parse("2024-06-12T20:00:00Z");
+
     private final MarketHours hours = MarketHours.defaults();
 
     // America/New_York is UTC-4 in June, so 18:00Z = 14:00 ET (open), 13:00Z = 09:00 ET (pre-open).
@@ -30,9 +34,9 @@ class MarketHoursTest {
     @Test
     void closeBoundaryIsExclusiveAndOpenIsInclusive() {
         assertSoftly(softly -> {
-            softly.assertThat(hours.isOpen(Instant.parse("2024-06-12T13:30:00Z"))).isTrue();
-            softly.assertThat(hours.isOpen(Instant.parse("2024-06-12T19:59:59Z"))).isTrue();
-            softly.assertThat(hours.isOpen(Instant.parse("2024-06-12T20:00:00Z"))).isFalse();
+            softly.assertThat(hours.isOpen(OPENING_BELL)).isTrue();
+            softly.assertThat(hours.isOpen(LAST_SECOND_BEFORE_CLOSE)).isTrue();
+            softly.assertThat(hours.isOpen(CLOSING_BELL)).isFalse();
         });
     }
 }

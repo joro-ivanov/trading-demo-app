@@ -3,6 +3,7 @@ package com.example.demo.auth.web;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,6 +18,7 @@ import com.example.demo.auth.service.TokenIssuer;
 import com.example.demo.auth.service.UserDirectory;
 import com.example.demo.auth.web.AuthDtos.LoginRequest;
 import com.example.demo.auth.web.AuthDtos.LoginResponse;
+import com.example.demo.auth.web.AuthDtos.MeResponse;
 import com.example.demo.auth.web.AuthDtos.RegisterRequest;
 import com.example.demo.auth.web.AuthDtos.UserResponse;
 
@@ -53,6 +55,16 @@ public class AuthController {
     @GetMapping("/users")
     public List<UserResponse> users() {
         return users.all().stream().map(UserResponse::from).toList();
+    }
+
+    /**
+     * Secured: the profile of the JWT subject. A validly signed token for a user that no longer exists
+     * is a 404 (the token outlived the account), not a 401.
+     */
+    @GetMapping("/me")
+    public MeResponse me(Authentication authentication) {
+        return users.byUsername(authentication.getName()).map(MeResponse::from)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No user " + authentication.getName()));
     }
 
     @GetMapping("/users/{id}")

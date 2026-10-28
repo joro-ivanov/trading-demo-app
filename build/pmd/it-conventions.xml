@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<ruleset name="it-conventions"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        Stricter companion to test-conventions.xml for the backend service modules: besides control
+        statements, tests must not hide branching or looping in boolean operators, comparisons or
+        callbacks. One scenario per test; cases that differ only in data are @ParameterizedTest rows.
+        Plumbing that needs logic lives in a test harness/ package (excluded, like in test-conventions).
+    </description>
+
+    <exclude-pattern>.*[/\\]src[/\\]main[/\\].*</exclude-pattern>
+    <exclude-pattern>.*[/\\]harness[/\\].*</exclude-pattern>
+
+    <rule name="NoLogicOperatorsInTests"
+          language="java"
+          message="Tests must be linear: no &amp;&amp;, ||, !, == or != (assert the values instead)"
+          class="net.sourceforge.pmd.lang.rule.xpath.XPathRule">
+        <description>Boolean and comparison operators are conditional logic; assert with AssertJ instead.</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>//InfixExpression[@Operator = ('&amp;&amp;', '||', '==', '!=')] | //UnaryExpression[@Operator = '!']</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="NoCallbackBranchingInTests"
+          language="java"
+          message="Tests must be linear: no forEach/filter/ifPresent/orElseGet callbacks (move plumbing to harness/)"
+          class="net.sourceforge.pmd.lang.rule.xpath.XPathRule">
+        <description>Callback-style loops and branches are control flow in disguise.</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>//MethodCall[@MethodName = ('forEach', 'forEachOrdered', 'ifPresent', 'ifPresentOrElse', 'orElseGet', 'filter', 'takeWhile', 'dropWhile')]</value>
+            </property>
+        </properties>
+    </rule>
+</ruleset>

@@ -26,14 +26,16 @@ import io.qameta.allure.Allure;
 @ExtendWith(PlaywrightLifecycle.class)
 class MultiUserPortfolioTest extends BaseUiTest {
 
+    private static final int ORDER_QUANTITY = 5;
+
     @RunDuringMarketHours
     @Test
     void twoUsersSeeOnlyTheirOwnPortfolio() {
-        String secondUsername = registerFreshUser("u").username();
+        String secondUsername = registerFreshUser(USERNAME_PREFIX).username();
 
         Allure.step("Alice logs in (context 1) and buys AAPL through the dashboard");
         DashboardPage alice = loginAsPrimaryUser();
-        alice.placeOrder(TradingSymbols.AAPL, Side.BUY, 5);
+        alice.placeOrder(TradingSymbols.AAPL, Side.BUY, ORDER_QUANTITY);
         alice.waitForPosition(TradingSymbols.AAPL);
 
         Allure.step("Bob logs in in a second, isolated browser context");

@@ -62,4 +62,9 @@ public class UserDirectory {
     public Optional<UserEntity> byId(String id) {
         return repository.findById(id);
     }
+
+    @Transactional(readOnly = true)
+    public Optional<UserEntity> byUsername(String username) {
+        return repository.findByUsername(username);
+    }
 }

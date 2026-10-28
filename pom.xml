@@ -27,6 +27,9 @@
         <module>services/market-data-service</module>
         <module>services/portfolio-service</module>
         <module>services/notification-service</module>
+        <module>services/alert-service</module>
+        <module>services/watchlist-service</module>
+        <module>services/risk-service</module>
         <module>integration-tests</module>
         <module>e2e-tests</module>
     </modules>
@@ -56,6 +59,7 @@
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
+        <jacoco-maven-plugin.version>0.8.14</jacoco-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -140,6 +144,7 @@
                     <printFailingErrors>true</printFailingErrors>
                     <rulesets>
                         <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/test-conventions.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-magic-values.xml</ruleset>
                     </rulesets>
                 </configuration>
                 <executions>
@@ -174,6 +179,29 @@
                         <goals>
                             <goal>check</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Testcontainers' container logs (target/container-logs/<name>.log, appended by logback-test.xml)
+                 are cleared once per run, right before the ITs, so a rerun without `clean` only shows its own. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>clear-container-logs</id>
+                        <phase>pre-integration-test</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.build.directory}/container-logs</directory>
+                                </fileset>
+                            </filesets>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -215,6 +243,27 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <version>${maven-failsafe-plugin.version}</version>
+                </plugin>
+                <!-- Integration-test coverage, opted into by the backend service poms:
+                     target/site/jacoco-it/jacoco.xml feeds the /it-gen coverage review. -->
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco-maven-plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>prepare-agent-integration</id>
+                            <goals>
+                                <goal>prepare-agent-integration</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>report-integration</id>
+                            <goals>
+                                <goal>report-integration</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
                 <!-- We don't inherit spring-boot-starter-parent, so the Boot plugin needs its
                      version AND an explicit repackage execution to produce the executable jar. -->

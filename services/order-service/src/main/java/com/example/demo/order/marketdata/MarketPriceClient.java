@@ -7,7 +7,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
+import com.example.demo.common.http.Downstream;
+import com.example.demo.common.http.HttpClients;
 import com.example.demo.common.security.Jwt;
 
 /**
@@ -22,9 +25,11 @@ public class MarketPriceClient {
     private final String secret;
 
     public MarketPriceClient(RestClient.Builder builder,
-                             @Value("${market-data.base-url}") String baseUrl,
+                             MarketDataProperties properties,
                              @Value("${security.jwt.secret}") String secret) {
-        this.restClient = builder.baseUrl(baseUrl).build();
+        this.restClient = builder.baseUrl(properties.baseUrl())
+                .requestFactory(HttpClients.withTimeouts(properties.connectTimeout(), properties.readTimeout()))
+                .build();
         this.secret = secret;
     }
 
@@ -38,6 +43,8 @@ public class MarketPriceClient {
             return price == null ? Optional.empty() : Optional.ofNullable(price.price());
         } catch (HttpClientErrorException.NotFound notFound) {
             return Optional.empty();
+        } catch (RestClientException failure) {
+            throw Downstream.failure("Market data", failure);
         }
     }
 

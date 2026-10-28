@@ -1,5 +1,5 @@
 # Build the static bundle, then serve it with nginx (which also reverse-proxies the backend).
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci

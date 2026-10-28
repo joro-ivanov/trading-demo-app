@@ -33,6 +33,15 @@ import io.qameta.allure.Allure;
 class FundsTest extends BaseUiTest {
 
     private static final NumberFormat MONEY = NumberFormat.getCurrencyInstance(Locale.US);
+    private static final String ZERO_BALANCE_TEXT = "$0.00";
+    private static final String DEPOSIT_AMOUNT = "1000";
+    private static final String BALANCE_AFTER_DEPOSIT_TEXT = "$1,000.00";
+    /** {@link #DEFAULT_STARTING_CASH} as the funds panel displays it. */
+    private static final String STARTING_BALANCE_TEXT = "$10,000.00";
+    /** The BUY fill and the SELL fill. */
+    private static final int BUY_AND_SELL_FILLS = 2;
+    /** The funds panel shows cents. */
+    private static final int DISPLAYED_SCALE = 2;
 
     @Test
     void depositingThroughTheFundsPanelUpdatesTheBalance() {
@@ -44,18 +53,18 @@ class FundsTest extends BaseUiTest {
 
         DashboardPage dashboard = dashboardPage();
         Allure.step("The funds panel shows a zero balance");
-        dashboard.awaitBalance("$0.00");
+        dashboard.awaitBalance(ZERO_BALANCE_TEXT);
 
         Allure.step("Depositing 1000 updates the displayed balance");
-        dashboard.deposit("1000");
-        dashboard.awaitBalance("$1,000.00");
+        dashboard.deposit(DEPOSIT_AMOUNT);
+        dashboard.awaitBalance(BALANCE_AFTER_DEPOSIT_TEXT);
     }
 
     @RunDuringMarketHours
     @Test
     void buyingAndSellingThroughTheDashboardUpdatesTheDisplayedBalance() {
         DashboardPage dashboard = loginAsPrimaryUser();
-        dashboard.awaitBalance("$10,000.00");
+        dashboard.awaitBalance(STARTING_BALANCE_TEXT);
         BigDecimal startingBalance = dashboard.balanceAmount();
 
         Allure.step("Buying 1 AAPL updates the displayed balance by the exact filled price");
@@ -70,7 +79,7 @@ class FundsTest extends BaseUiTest {
         Allure.step("Selling the same 1 AAPL updates the displayed balance by the exact filled price");
         dashboard.placeOrder(TradingSymbols.AAPL, Side.SELL, 1);
         dashboard.awaitPositionRemoved(TradingSymbols.AAPL);
-        Fill sellFill = awaitLatestFill(2, Side.SELL);
+        Fill sellFill = awaitLatestFill(BUY_AND_SELL_FILLS, Side.SELL);
         BigDecimal preciseAfterSell = preciseAfterBuy.add(sellFill.price().multiply(sellFill.quantity()));
         BigDecimal expectedAfterSell = displayedAmount(preciseAfterSell);
         dashboard.awaitBalance(MONEY.format(expectedAfterSell));
@@ -92,6 +101,6 @@ class FundsTest extends BaseUiTest {
     }
 
     private static BigDecimal displayedAmount(BigDecimal amount) {
-        return amount.setScale(2, RoundingMode.HALF_UP);
+        return amount.setScale(DISPLAYED_SCALE, RoundingMode.HALF_UP);
     }
 }

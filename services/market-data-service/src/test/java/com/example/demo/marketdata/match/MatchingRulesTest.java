@@ -13,12 +13,17 @@ import org.junit.jupiter.params.provider.CsvSource;
 class MatchingRulesTest {
 
     private static final BigDecimal MARKET = new BigDecimal("100");
+    private static final String MARKET_ORDER = "MARKET";
+    private static final String LIMIT_ORDER = "LIMIT";
+    private static final String STOP_ORDER = "STOP";
+    private static final String BUY = "BUY";
+    private static final String SELL = "SELL";
 
     @Test
     void marketOrdersAlwaysFill() {
         assertSoftly(softly -> {
-            softly.assertThat(MatchingRules.isMarketable("MARKET", "BUY", MARKET, null, null)).isTrue();
-            softly.assertThat(MatchingRules.isMarketable(null, "SELL", MARKET, null, null)).isTrue();
+            softly.assertThat(MatchingRules.isMarketable(MARKET_ORDER, BUY, MARKET, null, null)).isTrue();
+            softly.assertThat(MatchingRules.isMarketable(null, SELL, MARKET, null, null)).isTrue();
         });
     }
 
@@ -29,7 +34,7 @@ class MatchingRulesTest {
         "SELL,100,true", "SELL,99,true", "SELL,101,false"
     })
     void limitMarketability(String side, String limit, boolean marketable) {
-        assertThat(MatchingRules.isMarketable("LIMIT", side, MARKET, new BigDecimal(limit), null))
+        assertThat(MatchingRules.isMarketable(LIMIT_ORDER, side, MARKET, new BigDecimal(limit), null))
                 .isEqualTo(marketable);
     }
 
@@ -40,7 +45,7 @@ class MatchingRulesTest {
         "SELL,100,true", "SELL,101,true", "SELL,99,false"
     })
     void stopMarketability(String side, String stop, boolean marketable) {
-        assertThat(MatchingRules.isMarketable("STOP", side, MARKET, null, new BigDecimal(stop)))
+        assertThat(MatchingRules.isMarketable(STOP_ORDER, side, MARKET, null, new BigDecimal(stop)))
                 .isEqualTo(marketable);
     }
 }

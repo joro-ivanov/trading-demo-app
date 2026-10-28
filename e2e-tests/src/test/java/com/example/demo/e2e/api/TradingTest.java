@@ -38,6 +38,20 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static com.example.demo.e2e.framework.support.ApiErrorMessages.INVALID_REQUEST_CONTENT;
+import static com.example.demo.e2e.framework.support.ApiErrorMessages.JWT_DECODE_ERROR;
+import static com.example.demo.e2e.framework.support.ApiPaths.ORDER;
+import static com.example.demo.e2e.framework.support.ApiPaths.ORDERS;
+import static com.example.demo.e2e.framework.support.ApiPaths.PORTFOLIO;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.BAD_REQUEST;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.BAD_REQUEST_REASON;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CONFLICT;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CONFLICT_REASON;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CREATED;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.OK;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNAUTHORIZED;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNAUTHORIZED_REASON;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
@@ -56,22 +70,43 @@ import static org.awaitility.Awaitility.await;
 @ExtendWith(TestLogArtifacts.class)
 class TradingTest extends BaseApiTest {
 
-    private static final String LIMIT_PRICE_FIELD = "limitPrice";
-    private static final String STOP_PRICE_FIELD = "stopPrice";
+    /** Quantity of the main order in most trading scenarios. */
+    private static final int ORDER_QUANTITY = 10;
+    private static final BigDecimal ORDER_SIZE = BigDecimal.valueOf(ORDER_QUANTITY);
+    /** Position bought first so that a later SELL passes the short-sell guard. */
+    private static final BigDecimal SEEDED_POSITION = new BigDecimal("20");
+    /** Below any market price: a SELL limit or BUY stop at it is marketable, a BUY limit at it rests. */
+    private static final BigDecimal BELOW_MARKET_PRICE = new BigDecimal("0.01");
+    /** 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits. */
+    private static final BigDecimal UNREACHABLE_STOP_PRICE = new BigDecimal("1000");
+    private static final BigDecimal NEGATIVE_QUANTITY = new BigDecimal("-5");
+    private static final BigDecimal WS_FILL_QUANTITY = new BigDecimal("5");
+    private static final String FILLS_ALICE_PREFIX = "fillsa";
+    private static final String FILLS_BOB_PREFIX = "fillsb";
+    /** Enough cash for a brand-new user's BUY (a new user starts with zero cash). */
+    private static final BigDecimal NEW_USER_DEPOSIT = new BigDecimal("100000");
+    private static final BigDecimal NEW_USER_BUY_QUANTITY = new BigDecimal("3");
+    private static final BigDecimal PNL_BUY_QUANTITY = new BigDecimal("2");
+    /** The stack's shared HS256 secret (docker-compose JWT_SECRET default). */
+    private static final String JWT_SECRET = "demo-secret-demo-secret-demo-secret-1234";
+    private static final Instant EXPIRED_TOKEN_ISSUED_AT = Instant.parse("2026-07-02T15:00:10Z");
+    private static final String EXPIRED_TOKEN_EXPIRY = "2026-07-02T15:01:10Z";
+    private static final String TOKEN_EXPIRED_REASON = "Jwt expired at " + EXPIRED_TOKEN_EXPIRY;
+    private static final String FILLED_ORDER_NOT_CANCELLABLE = "Filled orders cannot be cancelled: ";
 
     @RunDuringMarketHours
     @ParameterizedTest(name = "BUY MARKET {0}")
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingABuyMarketOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
         Allure.step("Place a marketable MARKET BUY order for 10 " + symbol);
-        ApiResponse response = OrdersService.placeMarketOrder(token, symbol, Side.BUY, new BigDecimal("10"));
+        ApiResponse response = OrdersService.placeMarketOrder(token, symbol, Side.BUY, ORDER_SIZE);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
             softly.assertThat(order.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -82,7 +117,7 @@ class TradingTest extends BaseApiTest {
             Position position = findPositionBySymbol(symbol);
             assertSoftly(softly -> {
                 softly.assertThat(position.symbol()).isEqualTo(symbol);
-                softly.assertThat(position.quantity()).isEqualByComparingTo("10");
+                softly.assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
             });
         });
 
@@ -98,21 +133,21 @@ class TradingTest extends BaseApiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellMarketOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, new BigDecimal("20"));
+        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = findPositionBySymbol(symbol);
-            assertThat(seededPosition.quantity()).isEqualByComparingTo("20");
+            assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
         Allure.step("Place a marketable MARKET SELL order for 10 " + symbol);
-        ApiResponse response = OrdersService.placeMarketOrder(token, symbol, Side.SELL, new BigDecimal("10"));
+        ApiResponse response = OrdersService.placeMarketOrder(token, symbol, Side.SELL, ORDER_SIZE);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.SELL);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
             softly.assertThat(order.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -121,7 +156,7 @@ class TradingTest extends BaseApiTest {
         Allure.step("The " + symbol + " position remains represented in the portfolio");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position position = findPositionBySymbol(symbol);
-            assertThat(position.quantity()).isEqualByComparingTo("10");
+            assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
 
         Allure.step("The order is resolved to FILLED (the matcher filled it and order-service consumed it)");
@@ -135,25 +170,29 @@ class TradingTest extends BaseApiTest {
     @ParameterizedTest(name = "BUY LIMIT {0}")
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingABuyLimitOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
-        Allure.step("Place a marketable LIMIT BUY order for 10 " + symbol);
-        OrderRequest limitOrder = OrderFactory.limitBuy(symbol, 10, new BigDecimal("100000"));
+        Allure.step("Read the latest " + symbol + " price; a limit 10% above it is immediately marketable");
+        BigDecimal limitPrice = OrderFactory.marketableBuyLimit(
+                MarketDataService.latestPrice(token, symbol).as(Price.class).price());
+
+        Allure.step("Place a marketable LIMIT BUY order for 10 " + symbol + " @ " + limitPrice);
+        OrderRequest limitOrder = OrderFactory.limitBuy(symbol, ORDER_QUANTITY, limitPrice);
         ApiResponse response = OrdersService.placeOrder(token, limitOrder);
         OrderResponse orderResponse = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(orderResponse.id()).isNotBlank();
             softly.assertThat(orderResponse.symbol()).isEqualTo(symbol);
             softly.assertThat(orderResponse.side()).isEqualTo(Side.BUY);
-            softly.assertThat(orderResponse.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(orderResponse.quantity()).isEqualByComparingTo(ORDER_SIZE);
             softly.assertThat(orderResponse.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(orderResponse.limitPrice()).isEqualByComparingTo("100000");
+            softly.assertThat(orderResponse.limitPrice()).isEqualByComparingTo(limitPrice);
             softly.assertThat(orderResponse.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
         String orderId = orderResponse.id();
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position position = findPositionBySymbol(symbol);
-            assertThat(position.quantity()).isEqualByComparingTo("10");
+            assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             OrderResponse resolvedOrder = findOrderById(orderId);
@@ -166,31 +205,31 @@ class TradingTest extends BaseApiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellLimitOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, new BigDecimal("20"));
+        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = findPositionBySymbol(symbol);
-            assertThat(seededPosition.quantity()).isEqualByComparingTo("20");
+            assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
         Allure.step("Place a marketable LIMIT SELL order for 10 " + symbol);
-        OrderRequest limitSellOrderRequest = OrderFactory.limitSell(symbol, 10, new BigDecimal("0.01"));
+        OrderRequest limitSellOrderRequest = OrderFactory.limitSell(symbol, ORDER_QUANTITY, BELOW_MARKET_PRICE);
         ApiResponse response = OrdersService.placeOrder(token, limitSellOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.SELL);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
             softly.assertThat(order.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(order.limitPrice()).isEqualByComparingTo("0.01");
+            softly.assertThat(order.limitPrice()).isEqualByComparingTo(BELOW_MARKET_PRICE);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
         String orderId = order.id();
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position position = findPositionBySymbol(symbol);
-            assertThat(position.quantity()).isEqualByComparingTo("10");
+            assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             OrderResponse resolvedOrder = findOrderById(orderId);
@@ -203,24 +242,24 @@ class TradingTest extends BaseApiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingABuyStopOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
         Allure.step("Place a marketable STOP BUY order for 10 " + symbol);
-        OrderRequest stopBuyOrderRequest = OrderFactory.stopBuy(symbol, 10, new BigDecimal("0.01"));
+        OrderRequest stopBuyOrderRequest = OrderFactory.stopBuy(symbol, ORDER_QUANTITY, BELOW_MARKET_PRICE);
         ApiResponse response = OrdersService.placeOrder(token, stopBuyOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
             softly.assertThat(order.type()).isEqualTo(OrderType.STOP);
-            softly.assertThat(order.stopPrice()).isEqualByComparingTo("0.01");
+            softly.assertThat(order.stopPrice()).isEqualByComparingTo(BELOW_MARKET_PRICE);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
         String orderId = order.id();
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position position = findPositionBySymbol(symbol);
-            assertThat(position.quantity()).isEqualByComparingTo("10");
+            assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             OrderResponse resolvedOrder = findOrderById(orderId);
@@ -233,31 +272,35 @@ class TradingTest extends BaseApiTest {
     @ValueSource(strings = {TradingSymbols.AAPL, TradingSymbols.MSFT, TradingSymbols.GOOG})
     void placingASellStopOrderIsAcknowledgedAndAppearsInThePortfolio(String symbol) {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, new BigDecimal("20"));
+        OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = findPositionBySymbol(symbol);
-            assertThat(seededPosition.quantity()).isEqualByComparingTo("20");
+            assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
-        Allure.step("Place a marketable STOP SELL order for 10 " + symbol);
-        OrderRequest stopSellOrderRequest = OrderFactory.stopSell(symbol, 10, new BigDecimal("1000000"));
+        Allure.step("Read the latest " + symbol + " price; a SELL stop 10% above it is already breached");
+        BigDecimal stopPrice = OrderFactory.marketableSellStop(
+                MarketDataService.latestPrice(token, symbol).as(Price.class).price());
+
+        Allure.step("Place a marketable STOP SELL order for 10 " + symbol + " @ " + stopPrice);
+        OrderRequest stopSellOrderRequest = OrderFactory.stopSell(symbol, ORDER_QUANTITY, stopPrice);
         ApiResponse response = OrdersService.placeOrder(token, stopSellOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(Side.SELL);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
             softly.assertThat(order.type()).isEqualTo(OrderType.STOP);
-            softly.assertThat(order.stopPrice()).isEqualByComparingTo("1000000");
+            softly.assertThat(order.stopPrice()).isEqualByComparingTo(stopPrice);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
         String orderId = order.id();
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position position = findPositionBySymbol(symbol);
-            assertThat(position.quantity()).isEqualByComparingTo("10");
+            assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             OrderResponse resolvedOrder = findOrderById(orderId);
@@ -271,7 +314,7 @@ class TradingTest extends BaseApiTest {
         ApiResponse response = MarketDataService.latestPrice(token, TradingSymbols.AAPL);
         Price price = response.as(Price.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(200);
+            softly.assertThat(response.statusCode()).isEqualTo(OK);
             softly.assertThat(price.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(price.price()).isNotNull();
             softly.assertThat(price.price()).isPositive();
@@ -281,42 +324,42 @@ class TradingTest extends BaseApiTest {
     @Test
     void invalidOrderIsRejectedWith400() {
         Allure.step("Submitting a blank symbol returns 400 (no client-side validation)");
-        ApiResponse response = OrdersService.placeMarketOrder(token, "", Side.BUY, new BigDecimal("-5"));
+        ApiResponse response = OrdersService.placeMarketOrder(token, "", Side.BUY, NEGATIVE_QUANTITY);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(400);
-            softly.assertThat(problem.error()).isEqualTo("Bad Request");
-            softly.assertThat(problem.status()).isEqualTo(400);
-            softly.assertThat(problem.message()).isEqualTo("Invalid request content.");
-            softly.assertThat(problem.path()).isEqualTo("/orders");
+            softly.assertThat(response.statusCode()).isEqualTo(BAD_REQUEST);
+            softly.assertThat(problem.error()).isEqualTo(BAD_REQUEST_REASON);
+            softly.assertThat(problem.status()).isEqualTo(BAD_REQUEST);
+            softly.assertThat(problem.message()).isEqualTo(INVALID_REQUEST_CONTENT);
+            softly.assertThat(problem.path()).isEqualTo(ORDERS);
         });
     }
 
     // Both sides exercised end-to-end: this proves the order→match→fill→WS-push chain carries a SELL
-    // as well as a BUY. The SELL position arithmetic itself is owned by PortfolioServiceIT (no overlap).
+    // as well as a BUY. The SELL position arithmetic itself is owned by the portfolio-service FillsListenerIT (no overlap).
     @RunDuringMarketHours
     @ParameterizedTest(name = "{0} fill for {1} is pushed over WebSocket")
     @MethodSource("webSocketFillOrders")
     void fillIsPushedOverWebSocketForThePlacedOrder(Side side, String symbol) {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
-        OrdersService.placeMarketOrder(token, symbol, Side.BUY, new BigDecimal("10"));
+        OrdersService.placeMarketOrder(token, symbol, Side.BUY, ORDER_SIZE);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Position seededPosition = findPositionBySymbol(symbol);
-            assertThat(seededPosition.quantity()).isEqualByComparingTo("10");
+            assertThat(seededPosition.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
 
         Allure.step("Subscribe to fills over WebSocket (STOMP)");
         WsSession session = NotificationsWsService.subscribeFills(token);
 
         Allure.step("Place a " + side + " order for 5 " + symbol);
-        ApiResponse response = OrdersService.placeMarketOrder(token, symbol, side, new BigDecimal("5"));
+        ApiResponse response = OrdersService.placeMarketOrder(token, symbol, side, WS_FILL_QUANTITY);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(symbol);
             softly.assertThat(order.side()).isEqualTo(side);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("5");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(WS_FILL_QUANTITY);
             softly.assertThat(order.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -329,17 +372,17 @@ class TradingTest extends BaseApiTest {
             softly.assertThat(frameFill.orderId()).isEqualTo(orderId);
             softly.assertThat(frameFill.symbol()).isEqualTo(symbol);
             softly.assertThat(frameFill.side()).isEqualTo(side);
-            softly.assertThat(frameFill.quantity()).isEqualByComparingTo("5");
+            softly.assertThat(frameFill.quantity()).isEqualByComparingTo(WS_FILL_QUANTITY);
         });
     }
 
     @RunDuringMarketHours
     @Test
     void liveFillsAreScopedToTheAuthenticatedUserAcrossWsAndRecentFillsApi() {
-        Login alice = registerFreshUser("fillsa");
-        Login bob = registerFreshUser("fillsb");
-        FundsService.deposit(alice.token(), new BigDecimal("10000"));
-        FundsService.deposit(bob.token(), new BigDecimal("10000"));
+        Login alice = registerFreshUser(FILLS_ALICE_PREFIX);
+        Login bob = registerFreshUser(FILLS_BOB_PREFIX);
+        FundsService.deposit(alice.token(), DEFAULT_STARTING_CASH);
+        FundsService.deposit(bob.token(), DEFAULT_STARTING_CASH);
 
         Allure.step("Alice and Bob subscribe to their own fill feeds");
         WsSession aliceSession = NotificationsWsService.subscribeFills(alice.token());
@@ -349,7 +392,7 @@ class TradingTest extends BaseApiTest {
         ApiResponse aliceOrderResponse = OrdersService.placeMarketOrder(alice.token(), TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
         OrderResponse aliceOrder = aliceOrderResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(aliceOrderResponse.statusCode()).isEqualTo(201);
+            softly.assertThat(aliceOrderResponse.statusCode()).isEqualTo(CREATED);
             softly.assertThat(aliceOrder.id()).isNotBlank();
             softly.assertThat(aliceOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(aliceOrder.side()).isEqualTo(Side.BUY);
@@ -359,7 +402,7 @@ class TradingTest extends BaseApiTest {
             softly.assertThat(aliceFrame.orderId()).isEqualTo(aliceOrder.id());
             softly.assertThat(aliceFrame.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(aliceFrame.side()).isEqualTo(Side.BUY);
-            softly.assertThat(aliceFrame.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(aliceFrame.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(bobSession.nextFrame(STABILITY_TIMEOUT)).isNull();
         });
 
@@ -367,7 +410,7 @@ class TradingTest extends BaseApiTest {
         ApiResponse bobOrderResponse = OrdersService.placeMarketOrder(bob.token(), TradingSymbols.MSFT, Side.BUY, BigDecimal.ONE);
         OrderResponse bobOrder = bobOrderResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(bobOrderResponse.statusCode()).isEqualTo(201);
+            softly.assertThat(bobOrderResponse.statusCode()).isEqualTo(CREATED);
             softly.assertThat(bobOrder.id()).isNotBlank();
             softly.assertThat(bobOrder.symbol()).isEqualTo(TradingSymbols.MSFT);
             softly.assertThat(bobOrder.side()).isEqualTo(Side.BUY);
@@ -377,7 +420,7 @@ class TradingTest extends BaseApiTest {
             softly.assertThat(bobFrame.orderId()).isEqualTo(bobOrder.id());
             softly.assertThat(bobFrame.symbol()).isEqualTo(TradingSymbols.MSFT);
             softly.assertThat(bobFrame.side()).isEqualTo(Side.BUY);
-            softly.assertThat(bobFrame.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(bobFrame.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(aliceSession.nextFrame(STABILITY_TIMEOUT)).isNull();
         });
         aliceSession.close();
@@ -396,26 +439,30 @@ class TradingTest extends BaseApiTest {
 
     // The one whole-chain price seam: a marketable LIMIT BUY (limit far above market) must fill at the
     // MARKET price across order→matcher→fill→portfolio, not at its stated limit. The directional
-    // matcher logic itself is owned by MarketDataServiceIT (no overlap).
+    // matcher logic itself is owned by the market-data-service OrderMatchingIT (no overlap).
     @RunDuringMarketHours
     @Test
     void limitOrderFillsAtMarketPriceNotAtTheLimitAcrossTheChain() {
-        Allure.step("Place a LIMIT BUY 10 GOOG @ 100000 (immediately marketable)");
-        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.GOOG, 10, new BigDecimal("100000"));
+        Allure.step("Read the latest GOOG price; a limit 10% above it is immediately marketable");
+        BigDecimal limitPrice = OrderFactory.marketableBuyLimit(
+                MarketDataService.latestPrice(token, TradingSymbols.GOOG).as(Price.class).price());
+
+        Allure.step("Place a LIMIT BUY 10 GOOG @ " + limitPrice + " (immediately marketable)");
+        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.GOOG, ORDER_QUANTITY, limitPrice);
         ApiResponse response = OrdersService.placeOrder(this.token, limitBuyOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("10");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(ORDER_SIZE);
             softly.assertThat(order.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(order.limitPrice()).isEqualByComparingTo("100000");
+            softly.assertThat(order.limitPrice()).isEqualByComparingTo(limitPrice);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
 
-        Allure.step("It fills at the persisted market fill price, not the 100000 limit");
+        Allure.step("It fills at the persisted market fill price, not the " + limitPrice + " limit");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Fill latestFill = PortfolioService.recentFills(token).asList(Fill.class).stream()
                     .filter(fill -> fill.orderId().equals(order.id()))
@@ -427,26 +474,26 @@ class TradingTest extends BaseApiTest {
                     .orElseThrow();
             assertSoftly(softly -> {
                 softly.assertThat(latestFill.price()).isEqualByComparingTo(googPosition.avgPrice());
-                softly.assertThat(latestFill.price()).isNotEqualByComparingTo("100000");
+                softly.assertThat(latestFill.price()).isNotEqualByComparingTo(limitPrice);
             });
         });
     }
 
     // A non-marketable LIMIT is a valid order (accepted, SUBMITTED) but never fills — the matcher rests
     // it, so it is saved with status PENDING. (Marketable typed fills are covered above; the matcher's
-    // directional logic is owned by MarketDataServiceIT.)
+    // directional logic is owned by the market-data-service OrderMatchingIT.)
     @RunDuringMarketHours
     void pendingLimitOrderIsSubmittedAndResolvesToPending() {
         Allure.step("Place a non-marketable LIMIT BUY 1 GOOG (0.01)");
-        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.GOOG, 1, new BigDecimal("0.01"));
+        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.GOOG, 1, BELOW_MARKET_PRICE);
         ApiResponse response = OrdersService.placeOrder(token, limitBuyOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(order.type()).isEqualTo(OrderType.LIMIT);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -461,19 +508,21 @@ class TradingTest extends BaseApiTest {
 
     // A non-marketable STOP is a valid order (accepted, SUBMITTED) but never fills — the matcher rests
     // it, so it is saved with status PENDING. (Marketable typed fills are covered above; the matcher's
-    // directional logic is owned by MarketDataServiceIT.)
+    // directional logic is owned by the market-data-service OrderMatchingIT.)
     @RunDuringMarketHours
+    @Test
     void pendingStopOrderIsSubmittedAndResolvesToPending() {
-        Allure.step("Place a non-marketable STOP BUY 1 GOOG (1000000)");
-        OrderRequest stopBuyOrderRequest = OrderFactory.stopBuy(TradingSymbols.GOOG, 1, new BigDecimal("1000000"));
+        // 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits.
+        Allure.step("Place a non-marketable STOP BUY 1 GOOG (1000)");
+        OrderRequest stopBuyOrderRequest = OrderFactory.stopBuy(TradingSymbols.GOOG, 1, UNREACHABLE_STOP_PRICE);
         ApiResponse response = OrdersService.placeOrder(token, stopBuyOrderRequest);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(order.type()).isEqualTo(OrderType.STOP);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -493,17 +542,17 @@ class TradingTest extends BaseApiTest {
     @Test
     void aPlacedOrderCanBeCancelled() {
         Allure.step("Place a non-marketable LIMIT BUY order");
-        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.GOOG, 1, new BigDecimal("0.01"));
+        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.GOOG, 1, BELOW_MARKET_PRICE);
         ApiResponse placedResponse = OrdersService.placeOrder(token, limitBuyOrderRequest);
         OrderResponse placedOrder = placedResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(placedResponse.statusCode()).isEqualTo(201);
+            softly.assertThat(placedResponse.statusCode()).isEqualTo(CREATED);
             softly.assertThat(placedOrder.id()).isNotBlank();
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(placedOrder.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(placedOrder.limitPrice()).isEqualByComparingTo("0.01");
+            softly.assertThat(placedOrder.limitPrice()).isEqualByComparingTo(BELOW_MARKET_PRICE);
             softly.assertThat(placedOrder.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
         String orderId = placedOrder.id();
@@ -518,13 +567,13 @@ class TradingTest extends BaseApiTest {
         ApiResponse cancelled = OrdersService.cancelOrder(token, orderId);
         OrderResponse cancelledOrder = cancelled.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(cancelled.statusCode()).isEqualTo(200);
+            softly.assertThat(cancelled.statusCode()).isEqualTo(OK);
             softly.assertThat(cancelledOrder.id()).isEqualTo(orderId);
             softly.assertThat(cancelledOrder.symbol()).isEqualTo(TradingSymbols.GOOG);
             softly.assertThat(cancelledOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(cancelledOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(cancelledOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(cancelledOrder.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(cancelledOrder.limitPrice()).isEqualByComparingTo("0.01");
+            softly.assertThat(cancelledOrder.limitPrice()).isEqualByComparingTo(BELOW_MARKET_PRICE);
             softly.assertThat(cancelledOrder.status()).isEqualTo(OrderStatus.CANCELLED);
         });
 
@@ -580,17 +629,17 @@ class TradingTest extends BaseApiTest {
     @Test
     void aNewlyRegisteredUserCanTradeAndSeeTheirPortfolio() {
         Allure.step("Fund the account (a new user starts with zero cash)");
-        FundsService.deposit(token, new BigDecimal("100000"));
+        FundsService.deposit(token, NEW_USER_DEPOSIT);
 
         Allure.step("Place a BUY order");
-        ApiResponse response = OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.BUY, new BigDecimal("3"));
+        ApiResponse response = OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.BUY, NEW_USER_BUY_QUANTITY);
         OrderResponse order = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(order.id()).isNotBlank();
             softly.assertThat(order.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(order.side()).isEqualTo(Side.BUY);
-            softly.assertThat(order.quantity()).isEqualByComparingTo("3");
+            softly.assertThat(order.quantity()).isEqualByComparingTo(NEW_USER_BUY_QUANTITY);
             softly.assertThat(order.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(order.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -600,7 +649,7 @@ class TradingTest extends BaseApiTest {
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             assertThat(findOrderById(orderId).id()).isEqualTo(orderId);
             Position aaplPosition = findPositionBySymbol(TradingSymbols.AAPL);
-            assertThat(aaplPosition.quantity()).isEqualByComparingTo("3");
+            assertThat(aaplPosition.quantity()).isEqualByComparingTo(NEW_USER_BUY_QUANTITY);
         });
     }
 
@@ -610,7 +659,7 @@ class TradingTest extends BaseApiTest {
     @Test
     void positionCarriesLiveMarketPriceAndPnl() {
         Allure.step("Buy AAPL");
-        OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.BUY, new BigDecimal("2"));
+        OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.BUY, PNL_BUY_QUANTITY);
 
         Allure.step("The AAPL position eventually has a live mark and P&L");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
@@ -628,17 +677,17 @@ class TradingTest extends BaseApiTest {
     @RunDuringMarketHours
     @Test
     void cancellingAnAlreadyCancelledOrderIsIdempotent() {
-        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.AAPL, 1, new BigDecimal("0.01"));
+        OrderRequest limitBuyOrderRequest = OrderFactory.limitBuy(TradingSymbols.AAPL, 1, BELOW_MARKET_PRICE);
         ApiResponse placedResponse = OrdersService.placeOrder(token, limitBuyOrderRequest);
         OrderResponse placedOrder = placedResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(placedResponse.statusCode()).isEqualTo(201);
+            softly.assertThat(placedResponse.statusCode()).isEqualTo(CREATED);
             softly.assertThat(placedOrder.id()).isNotBlank();
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(placedOrder.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(placedOrder.limitPrice()).isEqualByComparingTo("0.01");
+            softly.assertThat(placedOrder.limitPrice()).isEqualByComparingTo(BELOW_MARKET_PRICE);
             softly.assertThat(placedOrder.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
         String orderId = placedOrder.id();
@@ -653,25 +702,25 @@ class TradingTest extends BaseApiTest {
         ApiResponse firstCancel = OrdersService.cancelOrder(token, orderId);
         OrderResponse firstCancelledOrder = firstCancel.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(firstCancel.statusCode()).isEqualTo(200);
+            softly.assertThat(firstCancel.statusCode()).isEqualTo(OK);
             softly.assertThat(firstCancelledOrder.id()).isEqualTo(orderId);
             softly.assertThat(firstCancelledOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(firstCancelledOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(firstCancelledOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(firstCancelledOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(firstCancelledOrder.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(firstCancelledOrder.limitPrice()).isEqualByComparingTo("0.01");
+            softly.assertThat(firstCancelledOrder.limitPrice()).isEqualByComparingTo(BELOW_MARKET_PRICE);
             softly.assertThat(firstCancelledOrder.status()).isEqualTo(OrderStatus.CANCELLED);
         });
         ApiResponse second = OrdersService.cancelOrder(token, orderId);
         OrderResponse secondCancelledOrder = second.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(second.statusCode()).isEqualTo(200);
+            softly.assertThat(second.statusCode()).isEqualTo(OK);
             softly.assertThat(secondCancelledOrder.id()).isEqualTo(orderId);
             softly.assertThat(secondCancelledOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(secondCancelledOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(secondCancelledOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(secondCancelledOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(secondCancelledOrder.type()).isEqualTo(OrderType.LIMIT);
-            softly.assertThat(secondCancelledOrder.limitPrice()).isEqualByComparingTo("0.01");
+            softly.assertThat(secondCancelledOrder.limitPrice()).isEqualByComparingTo(BELOW_MARKET_PRICE);
             softly.assertThat(secondCancelledOrder.status()).isEqualTo(OrderStatus.CANCELLED);
         });
     }
@@ -681,14 +730,14 @@ class TradingTest extends BaseApiTest {
     @RunDuringMarketHours
     @Test
     void cancellingAnAlreadyFilledOrderIsRejectedWith409() {
-        ApiResponse placedResponse = OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.BUY, new BigDecimal("1"));
+        ApiResponse placedResponse = OrdersService.placeMarketOrder(token, TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
         OrderResponse placedOrder = placedResponse.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(placedResponse.statusCode()).isEqualTo(201);
+            softly.assertThat(placedResponse.statusCode()).isEqualTo(CREATED);
             softly.assertThat(placedOrder.id()).isNotBlank();
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(placedOrder.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(placedOrder.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -704,11 +753,11 @@ class TradingTest extends BaseApiTest {
         ApiResponse cancelled = OrdersService.cancelOrder(token, orderId);
         ErrorResponse problem = cancelled.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(cancelled.statusCode()).isEqualTo(409);
-            softly.assertThat(problem.error()).isEqualTo("Conflict");
-            softly.assertThat(problem.status()).isEqualTo(409);
-            softly.assertThat(problem.message()).isEqualTo("Filled orders cannot be cancelled: " + orderId);
-            softly.assertThat(problem.path()).isEqualTo("/orders/" + orderId);
+            softly.assertThat(cancelled.statusCode()).isEqualTo(CONFLICT);
+            softly.assertThat(problem.error()).isEqualTo(CONFLICT_REASON);
+            softly.assertThat(problem.status()).isEqualTo(CONFLICT);
+            softly.assertThat(problem.message()).isEqualTo(FILLED_ORDER_NOT_CANCELLABLE + orderId);
+            softly.assertThat(problem.path()).isEqualTo(ORDER + orderId);
         });
     }
 
@@ -718,16 +767,16 @@ class TradingTest extends BaseApiTest {
     @Test
     void aUserCannotSeeAnotherUsersTrades() {
         String alice = token;
-        String bob = registerFreshUserToken("u");
+        String bob = registerFreshUserToken(USERNAME_PREFIX);
         Allure.step("Alice places a BUY 1 AAPL");
-        ApiResponse response = OrdersService.placeMarketOrder(alice, TradingSymbols.AAPL, Side.BUY, new BigDecimal("1"));
+        ApiResponse response = OrdersService.placeMarketOrder(alice, TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
         OrderResponse aliceOrder = response.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(201);
+            softly.assertThat(response.statusCode()).isEqualTo(CREATED);
             softly.assertThat(aliceOrder.id()).isNotBlank();
             softly.assertThat(aliceOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(aliceOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(aliceOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(aliceOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(aliceOrder.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(aliceOrder.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -748,18 +797,18 @@ class TradingTest extends BaseApiTest {
     void expiredTokenIsRejectedWith401() {
         String expired = com.example.demo.common.security.Jwt.issue(
                 username,
-                "demo-secret-demo-secret-demo-secret-1234",
-                Instant.parse("2026-07-02T15:00:10Z"),
-                Instant.parse("2026-07-02T15:01:10Z"));
+                JWT_SECRET,
+                EXPIRED_TOKEN_ISSUED_AT,
+                Instant.parse(EXPIRED_TOKEN_EXPIRY));
         Allure.step("An expired token is rejected with 401");
         ApiResponse response = PortfolioService.positions(expired);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(401);
-            softly.assertThat(problem.error()).isEqualTo("Unauthorized");
-            softly.assertThat(problem.status()).isEqualTo(401);
-            softly.assertThat(problem.message()).isEqualTo("An error occurred while attempting to decode the Jwt: Jwt expired at 2026-07-02T15:01:10Z");
-            softly.assertThat(problem.path()).isEqualTo("/portfolio");
+            softly.assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.error()).isEqualTo(UNAUTHORIZED_REASON);
+            softly.assertThat(problem.status()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.message()).isEqualTo(JWT_DECODE_ERROR + TOKEN_EXPIRED_REASON);
+            softly.assertThat(problem.path()).isEqualTo(PORTFOLIO);
         });
     }
 
@@ -783,9 +832,4 @@ class TradingTest extends BaseApiTest {
                 Arguments.of(Side.SELL, TradingSymbols.AAPL));
     }
 
-    private static Stream<Arguments> pendingTypedOrders() {
-        return Stream.of(
-                Arguments.of(OrderType.LIMIT, LIMIT_PRICE_FIELD, "0.01"),
-                Arguments.of(OrderType.STOP, STOP_PRICE_FIELD, "1000000"));
-    }
 }

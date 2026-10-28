@@ -27,6 +27,16 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.math.BigDecimal;
 import java.util.List;
 
+import static com.example.demo.e2e.framework.support.ApiErrorMessages.INVALID_CREDENTIALS;
+import static com.example.demo.e2e.framework.support.ApiErrorMessages.JWT_DECODE_ERROR;
+import static com.example.demo.e2e.framework.support.ApiPaths.AUTH_LOGIN;
+import static com.example.demo.e2e.framework.support.ApiPaths.ORDER;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.CREATED;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.NOT_FOUND;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.NOT_FOUND_REASON;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNAUTHORIZED;
+import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNAUTHORIZED_REASON;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
@@ -40,22 +50,33 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 class SecurityTest extends BaseApiTest {
 
     private static final String HISTORY = "/orders/history";
+    /** A well-formed secret that is not the stack's, so tokens signed with it must be rejected. */
+    private static final String FORGING_SECRET = "wrong-wrong-wrong-wrong-wrong-wrong-1234";
+    private static final int TOKEN_TTL_SECONDS = 300;
+    private static final String INVALID_SIGNATURE_REASON = "Signed JWT rejected: Invalid signature";
+    private static final String MALFORMED_TOKEN_REASON = "Malformed token";
+    private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String BEARER_TOKEN_REQUIRED = "Bearer token is required";
+    private static final String AUTHENTICATION_TOKEN_REQUIRED = "Authentication token is required";
+    /** The owner a request body falsely claims; the token subject must win. */
+    private static final String CLAIMED_OWNER = "bob";
+    private static final String ORDER_NOT_FOUND = "Order not found: ";
 
     // ── authentication ────────────────────────────────────────────────────────
 
     // A token with a valid shape but signed with the wrong secret must not be trusted.
     @Test
     void forgedTokenIsRejectedWith401() {
-        String forgedToken = Jwt.issue(username, "wrong-wrong-wrong-wrong-wrong-wrong-1234", 300);
+        String forgedToken = Jwt.issue(username, FORGING_SECRET, TOKEN_TTL_SECONDS);
         Allure.step("A token signed with the wrong secret is rejected");
         ApiRequest forgedTokenRequest = ApiRequest.builder().method(HttpMethod.GET).path(HISTORY).token(forgedToken).build();
         ApiResponse response = OrderHistoryService.history(forgedTokenRequest);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(401);
-            softly.assertThat(problem.error()).isEqualTo("Unauthorized");
-            softly.assertThat(problem.status()).isEqualTo(401);
-            softly.assertThat(problem.message()).isEqualTo("An error occurred while attempting to decode the Jwt: Signed JWT rejected: Invalid signature");
+            softly.assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.error()).isEqualTo(UNAUTHORIZED_REASON);
+            softly.assertThat(problem.status()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.message()).isEqualTo(JWT_DECODE_ERROR + INVALID_SIGNATURE_REASON);
             softly.assertThat(problem.path()).isEqualTo(HISTORY);
         });
     }
@@ -67,10 +88,10 @@ class SecurityTest extends BaseApiTest {
         ApiResponse response = OrderHistoryService.history(forgedTokenRequest);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(401);
-            softly.assertThat(problem.error()).isEqualTo("Unauthorized");
-            softly.assertThat(problem.status()).isEqualTo(401);
-            softly.assertThat(problem.message()).isEqualTo("An error occurred while attempting to decode the Jwt: Malformed token");
+            softly.assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.error()).isEqualTo(UNAUTHORIZED_REASON);
+            softly.assertThat(problem.status()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.message()).isEqualTo(JWT_DECODE_ERROR + MALFORMED_TOKEN_REASON);
             softly.assertThat(problem.path()).isEqualTo(HISTORY);
         });
     }
@@ -80,14 +101,14 @@ class SecurityTest extends BaseApiTest {
     void authorizationHeaderWithoutBearerPrefixIsRejectedWith401() {
         String raw = token;
         Allure.step("A valid token sent without the 'Bearer ' prefix is rejected");
-        ApiRequest forgedTokenRequest = ApiRequest.builder().method(HttpMethod.GET).path(HISTORY).header("Authorization", raw).build();
+        ApiRequest forgedTokenRequest = ApiRequest.builder().method(HttpMethod.GET).path(HISTORY).header(AUTHORIZATION_HEADER, raw).build();
         ApiResponse response = OrderHistoryService.history(forgedTokenRequest);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(401);
-            softly.assertThat(problem.error()).isEqualTo("Unauthorized");
-            softly.assertThat(problem.status()).isEqualTo(401);
-            softly.assertThat(problem.message()).isEqualTo("Bearer token is required");
+            softly.assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.error()).isEqualTo(UNAUTHORIZED_REASON);
+            softly.assertThat(problem.status()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.message()).isEqualTo(BEARER_TOKEN_REQUIRED);
             softly.assertThat(problem.path()).isEqualTo(HISTORY);
         });
     }
@@ -99,10 +120,10 @@ class SecurityTest extends BaseApiTest {
         ApiResponse response = OrderHistoryService.history(forgedTokenRequest);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(401);
-            softly.assertThat(problem.error()).isEqualTo("Unauthorized");
-            softly.assertThat(problem.status()).isEqualTo(401);
-            softly.assertThat(problem.message()).isEqualTo("Authentication token is required");
+            softly.assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.error()).isEqualTo(UNAUTHORIZED_REASON);
+            softly.assertThat(problem.status()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.message()).isEqualTo(AUTHENTICATION_TOKEN_REQUIRED);
             softly.assertThat(problem.path()).isEqualTo(HISTORY);
         });
     }
@@ -115,11 +136,11 @@ class SecurityTest extends BaseApiTest {
         ApiResponse response = AuthService.login(username, REGISTERED_USER_PASSWORD);
         ErrorResponse problem = response.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(response.statusCode()).isEqualTo(401);
-            softly.assertThat(problem.error()).isEqualTo("Unauthorized");
-            softly.assertThat(problem.status()).isEqualTo(401);
-            softly.assertThat(problem.message()).isEqualTo("Invalid credentials");
-            softly.assertThat(problem.path()).isEqualTo("/auth/login");
+            softly.assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.error()).isEqualTo(UNAUTHORIZED_REASON);
+            softly.assertThat(problem.status()).isEqualTo(UNAUTHORIZED);
+            softly.assertThat(problem.message()).isEqualTo(INVALID_CREDENTIALS);
+            softly.assertThat(problem.path()).isEqualTo(AUTH_LOGIN);
         });
     }
 
@@ -131,17 +152,17 @@ class SecurityTest extends BaseApiTest {
     @Test
     void orderOwnerIsTheTokenSubjectNotTheRequestBody() {
         String aliceToken = token;
-        String bobToken = registerFreshUserToken("u");
+        String bobToken = registerFreshUserToken(USERNAME_PREFIX);
         Allure.step("Alice places an order whose body falsely claims owner=bob");
-        OrderRequest aliceMarketOrderRequest = OrderRequestBuilder.anOrder().symbol(TradingSymbols.AAPL).side(Side.BUY).quantity(1).owner("bob").username("bob").build();
+        OrderRequest aliceMarketOrderRequest = OrderRequestBuilder.anOrder().symbol(TradingSymbols.AAPL).side(Side.BUY).quantity(1).owner(CLAIMED_OWNER).username(CLAIMED_OWNER).build();
         ApiResponse placed = OrdersService.placeOrder(aliceToken, aliceMarketOrderRequest);
         OrderResponse placedOrder = placed.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(placed.statusCode()).isEqualTo(201);
+            softly.assertThat(placed.statusCode()).isEqualTo(CREATED);
             softly.assertThat(placedOrder.id()).isNotBlank();
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(placedOrder.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(placedOrder.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -162,16 +183,16 @@ class SecurityTest extends BaseApiTest {
     @Test
     void aUserCannotCancelAnotherUsersOrder() {
         String aliceToken = token;
-        String bobToken = registerFreshUserToken("u");
+        String bobToken = registerFreshUserToken(USERNAME_PREFIX);
         Allure.step("Alice places an order");
-        ApiResponse placed = OrdersService.placeMarketOrder(aliceToken, TradingSymbols.AAPL, Side.BUY, new BigDecimal("1"));
+        ApiResponse placed = OrdersService.placeMarketOrder(aliceToken, TradingSymbols.AAPL, Side.BUY, BigDecimal.ONE);
         OrderResponse placedOrder = placed.as(OrderResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(placed.statusCode()).isEqualTo(201);
+            softly.assertThat(placed.statusCode()).isEqualTo(CREATED);
             softly.assertThat(placedOrder.id()).isNotBlank();
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
-            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo("1");
+            softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
             softly.assertThat(placedOrder.type()).isEqualTo(OrderType.MARKET);
             softly.assertThat(placedOrder.status()).isEqualTo(OrderStatus.SUBMITTED);
         });
@@ -181,11 +202,11 @@ class SecurityTest extends BaseApiTest {
         ApiResponse cancelResponse = OrdersService.cancelOrder(bobToken, orderId);
         ErrorResponse cancelProblem = cancelResponse.as(ErrorResponse.class);
         assertSoftly(softly -> {
-            softly.assertThat(cancelResponse.statusCode()).isEqualTo(404);
-            softly.assertThat(cancelProblem.error()).isEqualTo("Not Found");
-            softly.assertThat(cancelProblem.status()).isEqualTo(404);
-            softly.assertThat(cancelProblem.message()).isEqualTo("Order not found: " + orderId);
-            softly.assertThat(cancelProblem.path()).isEqualTo("/orders/" + orderId);
+            softly.assertThat(cancelResponse.statusCode()).isEqualTo(NOT_FOUND);
+            softly.assertThat(cancelProblem.error()).isEqualTo(NOT_FOUND_REASON);
+            softly.assertThat(cancelProblem.status()).isEqualTo(NOT_FOUND);
+            softly.assertThat(cancelProblem.message()).isEqualTo(ORDER_NOT_FOUND + orderId);
+            softly.assertThat(cancelProblem.path()).isEqualTo(ORDER + orderId);
         });
 
         Allure.step("Alice still owns the order");

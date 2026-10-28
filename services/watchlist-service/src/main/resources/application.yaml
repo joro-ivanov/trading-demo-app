@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: watchlist-service
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    connect-retries: 10
+    connect-retries-interval: 2s
+    # Per-service location so migrations don't collide on a shared classpath (integration-tests).
+    locations: classpath:db/migration/watchlist
+
+server:
+  port: 8086
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# Shared HMAC secret (HS256), the same value on every service. Override via JWT_SECRET.
+security:
+  jwt:
+    secret: ${JWT_SECRET:demo-secret-demo-secret-demo-secret-1234}
+
+# market-data-service: symbol validation + latest prices for enrichment.
+market-data:
+  base-url: ${MARKET_DATA_BASE_URL:http://localhost:8081}
+  connect-timeout: ${MARKET_DATA_CONNECT_TIMEOUT:1s}
+  read-timeout: ${MARKET_DATA_READ_TIMEOUT:2s}
+
+watchlists:
+  max-per-owner: ${WATCHLISTS_MAX_PER_OWNER:10}
+  max-symbols: ${WATCHLISTS_MAX_SYMBOLS:50}

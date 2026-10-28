@@ -28,17 +28,34 @@ server:
     include-message: always
     include-binding-errors: always
 
-# Upstream exchange (WireMock-mocked in tests; real endpoint via env in docker-compose)
+# Upstream exchange (WireMock-mocked in tests; real endpoint via env in docker-compose). Every
+# outbound client has explicit timeouts: a dependency that hangs becomes a 503, not a hung request.
 exchange:
   base-url: ${EXCHANGE_BASE_URL:http://localhost:9090}
+  connect-timeout: ${EXCHANGE_CONNECT_TIMEOUT:2s}
+  # routing places the order, so the exchange gets longer to answer than the read-only lookups
+  read-timeout: ${EXCHANGE_READ_TIMEOUT:5s}
 
 # portfolio-service, queried for the pre-trade short-sell guard (SELL) and funds guard (BUY)
 portfolio:
   base-url: ${PORTFOLIO_BASE_URL:http://localhost:8083}
+  connect-timeout: ${PORTFOLIO_CONNECT_TIMEOUT:2s}
+  read-timeout: ${PORTFOLIO_READ_TIMEOUT:3s}
 
 # market-data-service, queried for the latest price to value a BUY (pre-trade funds guard)
 market-data:
   base-url: ${MARKET_DATA_BASE_URL:http://localhost:8081}
+  connect-timeout: ${MARKET_DATA_CONNECT_TIMEOUT:2s}
+  read-timeout: ${MARKET_DATA_READ_TIMEOUT:3s}
+
+# risk-service, asked for the pre-trade risk check (per-user notional / position limits). Fails
+# closed: an unreachable risk-service refuses the order (503). enabled=false skips the check
+# (the integration flagship, which does not boot risk-service).
+risk:
+  enabled: ${RISK_ENABLED:true}
+  base-url: ${RISK_BASE_URL:http://localhost:8087}
+  connect-timeout: ${RISK_CONNECT_TIMEOUT:2s}
+  read-timeout: ${RISK_READ_TIMEOUT:3s}
 
 # Working-hours gate. enabled=false makes the market always open (used by the integration flagship).
 trading:

@@ -13,7 +13,9 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Bridges Kafka to the browser: each {@code price.ticks} message is fanned out to
  * {@code /topic/prices.<symbol>} and each {@code fills} message is delivered only to its owner via
- * {@code /user/queue/fills}.
+ * {@code /user/queue/fills}. Each {@code alerts.triggered} message (published by alert-service when a
+ * price alert fires) is pushed only to the alert's owner via {@code /user/queue/alerts}, so clients are
+ * notified without polling.
  */
 @Component
 public class NotificationListeners {
@@ -47,9 +49,26 @@ public class NotificationListeners {
         }
     }
 
+    @KafkaListener(topics = "alerts.triggered", groupId = "notification-alerts")
+    public void onAlertTriggered(String payload) {
+        try {
+            String owner = MAPPER.readValue(payload, AlertTriggeredEvent.class).owner();
+            if (owner == null || owner.isBlank()) {
+                LOG.warn("Dropping alert payload without an owner");
+                return;
+            }
+            messaging.convertAndSendToUser(owner, "/queue/alerts", payload);
+        } catch (JacksonException exception) {
+            LOG.warn("Dropping malformed alert payload");
+        }
+    }
+
     private record SymbolHolder(String symbol) {
     }
 
     private record FillEvent(String owner) {
+    }
+
+    private record AlertTriggeredEvent(String owner) {
     }
 }

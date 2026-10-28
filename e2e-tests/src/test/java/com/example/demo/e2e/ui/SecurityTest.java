@@ -25,6 +25,9 @@ import io.qameta.allure.Allure;
 @ExtendWith(PlaywrightLifecycle.class)
 class SecurityTest extends BaseUiTest {
 
+    /** Storage key under which the dashboard would keep a session token. */
+    private static final String SESSION_KEY = "session";
+
     @Test
     void refreshKeepsTheUserLoggedInUsingSessionStorageOnly() {
         DashboardPage dashboard = loginAsPrimaryUser();
@@ -58,8 +61,8 @@ class SecurityTest extends BaseUiTest {
         LoginPage loginPage = openLoginPage();
         loginPage.awaitShown();
         assertSoftly(softly -> {
-            softly.assertThat(LocalStorage.getItem("session")).isNull();
-            softly.assertThat(SessionStorage.getItem("session")).isNull();
+            softly.assertThat(LocalStorage.getItem(SESSION_KEY)).isNull();
+            softly.assertThat(SessionStorage.getItem(SESSION_KEY)).isNull();
         });
     }
 

@@ -26,6 +26,32 @@ import com.example.demo.portfolio.events.FillEvent;
 @ExtendWith(MockitoExtension.class)
 class FundsServiceTest {
 
+    private static final String OWNER = "alice";
+    private static final String OWNER_WITHOUT_BALANCE = "nobody";
+    private static final String STARTING_CASH = "100";
+    private static final BigDecimal DEPOSIT = new BigDecimal("50");
+    private static final String CASH_AFTER_DEPOSIT = "150";
+    private static final BigDecimal WITHDRAWAL = new BigDecimal("30");
+    private static final String CASH_AFTER_WITHDRAWAL = "70";
+    private static final String LOW_CASH = "20";
+    private static final BigDecimal OVERDRAWING_WITHDRAWAL = new BigDecimal("50");
+    private static final String INSUFFICIENT_FUNDS = "Insufficient funds";
+
+    // Fill settlement starts from this balance.
+    private static final String SETTLEMENT_CASH = "1000";
+    private static final String ORDER_ID = "o1";
+    private static final String SYMBOL = "AAPL";
+    private static final String BUY = "BUY";
+    private static final String SELL = "SELL";
+    private static final BigDecimal BUY_QUANTITY = new BigDecimal("2");
+    private static final BigDecimal BUY_PRICE = new BigDecimal("100");
+    private static final String CASH_AFTER_BUY = "800";
+    private static final BigDecimal SELL_QUANTITY = new BigDecimal("3");
+    private static final BigDecimal SELL_PRICE = new BigDecimal("50");
+    private static final String CASH_AFTER_SELL = "1150";
+    private static final Instant FILLED_AT = Instant.parse("2026-07-01T10:00:00Z");
+    private static final long SEQUENCE_ID = 1L;
+
     @Mock
     BalanceRepository repository;
 
@@ -39,45 +65,41 @@ class FundsServiceTest {
 
     @Test
     void balanceIsZeroWhenNoRowExists() {
-        assertThat(funds.balance("nobody")).isEqualTo(Money.ZERO);
+        assertThat(funds.balance(OWNER_WITHOUT_BALANCE)).isEqualTo(Money.ZERO);
     }
 
     @Test
     void depositAddsToTheBalance() {
-        givenBalance("alice", "100");
-        assertThat(funds.deposit("alice", new BigDecimal("50"))).isEqualTo(Money.of("150"));
+        givenBalance(OWNER, STARTING_CASH);
+        assertThat(funds.deposit(OWNER, DEPOSIT)).isEqualTo(Money.of(CASH_AFTER_DEPOSIT));
     }
 
     @Test
     void withdrawSubtractsFromTheBalance() {
-        givenBalance("alice", "100");
-        assertThat(funds.withdraw("alice", new BigDecimal("30"))).isEqualTo(Money.of("70"));
+        givenBalance(OWNER, STARTING_CASH);
+        assertThat(funds.withdraw(OWNER, WITHDRAWAL)).isEqualTo(Money.of(CASH_AFTER_WITHDRAWAL));
     }
 
     @Test
     void withdrawingMoreThanTheBalanceIsRejected() {
-        givenBalance("alice", "20");
-        assertThatThrownBy(() -> funds.withdraw("alice", new BigDecimal("50")))
+        givenBalance(OWNER, LOW_CASH);
+        assertThatThrownBy(() -> funds.withdraw(OWNER, OVERDRAWING_WITHDRAWAL))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("Insufficient funds");
+                .hasMessageContaining(INSUFFICIENT_FUNDS);
     }
 
     @Test
     void aBuyFillSpendsCash() {
-        BalanceEntity balance = givenBalance("alice", "1000");
-        funds.applyFill(new FillEvent(
-                "o1", "AAPL", "BUY", new BigDecimal("2"), new BigDecimal("100"), "alice",
-                Instant.parse("2026-07-01T10:00:00Z"), 1L));
-        assertThat(balance.getCash()).isEqualTo(Money.of("800"));
+        BalanceEntity balance = givenBalance(OWNER, SETTLEMENT_CASH);
+        funds.applyFill(new FillEvent(ORDER_ID, SYMBOL, BUY, BUY_QUANTITY, BUY_PRICE, OWNER, FILLED_AT, SEQUENCE_ID));
+        assertThat(balance.getCash()).isEqualTo(Money.of(CASH_AFTER_BUY));
     }
 
     @Test
     void aSellFillReceivesCash() {
-        BalanceEntity balance = givenBalance("alice", "1000");
-        funds.applyFill(new FillEvent(
-                "o1", "AAPL", "SELL", new BigDecimal("3"), new BigDecimal("50"), "alice",
-                Instant.parse("2026-07-01T10:00:00Z"), 1L));
-        assertThat(balance.getCash()).isEqualTo(Money.of("1150"));
+        BalanceEntity balance = givenBalance(OWNER, SETTLEMENT_CASH);
+        funds.applyFill(new FillEvent(ORDER_ID, SYMBOL, SELL, SELL_QUANTITY, SELL_PRICE, OWNER, FILLED_AT, SEQUENCE_ID));
+        assertThat(balance.getCash()).isEqualTo(Money.of(CASH_AFTER_SELL));
     }
 
     private BalanceEntity givenBalance(String owner, String cash) {

@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<ruleset name="no-magic-values"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        All test code (every module): no magic values. Every string and number a test uses must be named:
+        a final field (constant), a local variable, or a data table in an annotation (@CsvSource,
+        @ValueSource, @ParameterizedTest(name)). Allowed inline: 0, 1 and "". Human-readable prose that is
+        never compared is exempt: the description passed to Allure.step / as / describedAs /
+        withFailMessage / overridingErrorMessage, and AssertionError / IllegalStateException messages.
+        Production code, harness/ plumbing packages and the flagship's Stack helper are excluded.
+    </description>
+
+    <exclude-pattern>.*[/\\]src[/\\]main[/\\].*</exclude-pattern>
+    <exclude-pattern>.*[/\\]harness[/\\].*</exclude-pattern>
+    <exclude-pattern>.*[/\\]Stack\.java</exclude-pattern>
+
+    <rule name="NoMagicValuesInTests"
+          language="java"
+          message="Magic value in a test: name it (a constant, a local variable, or an annotation data table)"
+          class="net.sourceforge.pmd.lang.rule.xpath.XPathRule">
+        <description>
+            A literal is allowed only where it defines a name: anywhere inside a final field initializer
+            (a constant, e.g. Set.of("a", "b")), as the direct (or concatenated) initializer of a local
+            variable, or inside an annotation. 0, 1 and "" are allowed everywhere.
+        </description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value><![CDATA[
+(//StringLiteral[@Empty = false()] | //NumericLiteral[not(@ValueAsDouble = (0, 1))])
+    [not(ancestor::Annotation)]
+    [not(ancestor::FieldDeclaration[pmd-java:modifiers() = 'final'])]
+    [not(ancestor::*[not(self::InfixExpression)][1][self::VariableDeclarator])]
+    [not(ancestor::*[not(self::InfixExpression)][1]
+            [self::ArgumentList[parent::MethodCall[@MethodName = ('step', 'as', 'describedAs', 'withFailMessage', 'overridingErrorMessage')]]]
+         and ancestor-or-self::*[parent::ArgumentList][1][not(preceding-sibling::*)])]
+    [not(ancestor::*[not(self::InfixExpression)][1]
+            [self::ArgumentList[parent::ConstructorCall[ClassType[@SimpleName = ('AssertionError', 'IllegalStateException', 'IllegalArgumentException')]]]])]
+                ]]></value>
+            </property>
+        </properties>
+    </rule>
+</ruleset>

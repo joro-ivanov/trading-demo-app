@@ -40,6 +40,12 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
         </dependency>
+        <!-- DataAccessException hierarchy (org.springframework.dao) for ApiErrorHandler's DB-outage /
+             conflict mapping. Already on every service's classpath via JPA or spring-kafka. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
         <dependency>
             <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -60,5 +66,27 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Enforces exact-value assertions in this module's tests (TestAssertionsArchitectureTest). -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+    <build>
+        <plugins>
+            <!-- Shared backend code (ApiErrorHandler, Downstream) must never produce a 500 either. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <configuration>
+                    <rulesets>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/test-conventions.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-internal-server-error.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-magic-values.xml</ruleset>
+                    </rulesets>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
