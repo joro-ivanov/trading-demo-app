@@ -1,6 +1,7 @@
 package com.example.demo.portfolio.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
 
@@ -9,7 +10,11 @@ import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
+import com.example.demo.portfolio.domain.PositionEntity;
+import com.example.demo.portfolio.domain.PositionRepository;
 import com.example.demo.portfolio.it.harness.PortfolioITBase;
 import com.example.demo.portfolio.web.PositionResponse;
 
@@ -39,6 +44,16 @@ class PriceTicksListenerIT extends PortfolioITBase {
     private static final String SHARED_FILL_QUANTITY = "10";
     private static final String SHARED_FILL_PRICE = "100";
     private static final String SHARED_MARK = "150";
+
+    // Concurrent position writes (regression for a lost update between the fill and tick listeners).
+    private static final String RACE_SYMBOL = "RACE";
+    private static final String STALE_SYMBOL = "STALE";
+    private static final BigDecimal QUANTITY_AFTER_CONCURRENT_FILL = new BigDecimal("4");
+    private static final String SELL_QUANTITY = "6";
+    private static final String QUANTITY_AFTER_SELL = "4";
+
+    @Autowired
+    PositionRepository positionRepository;
 
     @Test
     void buildsPositionAndPnlFromFillThenPrice() {
@@ -116,5 +131,48 @@ class PriceTicksListenerIT extends PortfolioITBase {
                 assertThat(position(aliceToken, SHARED_SYMBOL).marketPrice()).isEqualByComparingTo(SHARED_MARK));
         await().atMost(WAIT).untilAsserted(() ->
                 assertThat(position(bobToken, SHARED_SYMBOL).marketPrice()).isEqualByComparingTo(SHARED_MARK));
+    }
+
+    // Regression: a tick used to load the position and save the whole row, so a fill committed in between
+    // was overwritten (lost update). Now the tick updates only market_price and a fill's save never writes
+    // market_price back. Reproduced deterministically: snapshot the position (a fill's in-flight read),
+    // commit a tick, then save the snapshot with the fill's new quantity. Both updates must survive.
+    @Test
+    void aTickAndAConcurrentFillToTheSamePositionBothSurvive() {
+        KAFKA_PROBE.sendFill(TESTER, RACE_SYMBOL, BUY, LONG_QUANTITY, AVG_PRICE);
+        await().atMost(WAIT).untilAsserted(() ->
+                assertThat(position(RACE_SYMBOL).quantity()).isEqualByComparingTo(LONG_QUANTITY));
+        PositionEntity fillInFlight = positionRepository.findByOwnerAndSymbol(TESTER, RACE_SYMBOL).orElseThrow();
+
+        KAFKA_PROBE.sendTick(RACE_SYMBOL, MARK_PRICE);
+        await().atMost(WAIT).untilAsserted(() ->
+                assertThat(position(RACE_SYMBOL).marketPrice()).isEqualByComparingTo(MARK_PRICE));
+        fillInFlight.setQuantity(QUANTITY_AFTER_CONCURRENT_FILL);
+        positionRepository.save(fillInFlight);
+
+        PositionResponse position = position(RACE_SYMBOL);
+        assertSoftly(softly -> {
+            softly.assertThat(position.quantity()).isEqualByComparingTo(QUANTITY_AFTER_CONCURRENT_FILL);
+            softly.assertThat(position.avgPrice()).isEqualByComparingTo(AVG_PRICE);
+            softly.assertThat(position.marketPrice()).isEqualByComparingTo(MARK_PRICE);
+        });
+    }
+
+    // Any other concurrent read-modify-write of a position fails loudly (optimistic locking) instead of
+    // silently overwriting a fill that committed in between, and the committed fill is kept.
+    @Test
+    void aStaleWriteAfterAFillFailsInsteadOfLosingTheFill() {
+        KAFKA_PROBE.sendFill(TESTER, STALE_SYMBOL, BUY, LONG_QUANTITY, AVG_PRICE);
+        await().atMost(WAIT).untilAsserted(() ->
+                assertThat(position(STALE_SYMBOL).quantity()).isEqualByComparingTo(LONG_QUANTITY));
+        PositionEntity staleCopy = positionRepository.findByOwnerAndSymbol(TESTER, STALE_SYMBOL).orElseThrow();
+
+        KAFKA_PROBE.sendFill(TESTER, STALE_SYMBOL, SELL, SELL_QUANTITY, AVG_PRICE);
+        await().atMost(WAIT).untilAsserted(() ->
+                assertThat(position(STALE_SYMBOL).quantity()).isEqualByComparingTo(QUANTITY_AFTER_SELL));
+
+        assertThatThrownBy(() -> positionRepository.save(staleCopy))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+        assertThat(position(STALE_SYMBOL).quantity()).isEqualByComparingTo(QUANTITY_AFTER_SELL);
     }
 }

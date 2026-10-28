@@ -468,7 +468,9 @@ It reports every ERROR, WARN and exception, with:
 - counts per run and per test class (or `container:<name>`)
 
 Container logs are read in their native formats: Postgres `ERROR/FATAL/WARNING` (with
-`DETAIL`/`STATEMENT`), Kafka log4j and Redis. A request that ended in an unhandled exception is flagged
+`DETAIL`/`STATEMENT`), Kafka log4j and Redis. nginx logs (the dashboard proxy) are read too: error-log
+`[error]`/`[crit]`/`[warn]` lines, and every access-log response with a **5xx** status (e.g.
+`HTTP 502 POST /api/auth/login`), so failures served to the browser surface even when the UI tests pass. A request that ended in an unhandled exception is flagged
 `unhandledHttp500: true`.
 
 A finding seen in only some reruns points to nondeterminism. LogScan filters nothing. In `/it-gen`

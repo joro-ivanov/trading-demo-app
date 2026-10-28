@@ -33,6 +33,8 @@ import java.util.stream.Stream;
  * read in their native formats: Postgres ({@code ERROR/FATAL/PANIC/WARNING}, with DETAIL/STATEMENT/HINT),
  * Kafka log4j ({@code [ts] LEVEL msg (logger)}) and Redis ({@code #} = warning). A request that ended in an
  * unhandled exception is flagged {@code unhandledHttp500: true}: the service answered 500, which is a bug.
+ * nginx logs are read too: error-log {@code [error]/[crit]/[alert]/[emerg]} (ERROR) and {@code [warn]} (WARN), and every
+ * access-log response with a 5xx status (ERROR, e.g. {@code HTTP 502 POST /api/auth/login}).
  */
 public class LogScan {
 
@@ -57,6 +59,12 @@ public class LogScan {
     private static final Pattern KAFKA_LINE = Pattern.compile(
             "^\\[[\\d\\- :,]+] (ERROR|WARN|INFO|DEBUG|TRACE) (.*?)(?: \\(([\\w.$]+)\\))?$");
     private static final Pattern REDIS_LINE = Pattern.compile("^\\d+:[XCMS] \\d+ \\w+ \\d{4} [\\d:.]+ ([.\\-*#]) (.*)$");
+    // nginx error log ("2026/10/28 17:56:14 [error] 31#31: *3366 connect() failed ...") and access log
+    // ("172.18.0.1 - - [28/Oct/2026:17:56:14 +0000] \"POST /api/auth/login HTTP/1.1\" 502 157 ...").
+    private static final Pattern NGINX_ERROR_LINE = Pattern.compile(
+            "^\\d{4}/\\d{2}/\\d{2} [\\d:]+ \\[(debug|info|notice|warn|error|crit|alert|emerg)] (?:\\d+#\\d+: )?(?:\\*\\d+ )?(.*)$");
+    private static final Pattern NGINX_ACCESS_LINE = Pattern.compile(
+            "^\\S+ \\S+ \\S+ \\[[^]]+] \"(\\S+) (\\S+)[^\"]*\" (\\d{3}) .*$");
     private static final String APP_PACKAGE = "com.example.demo.";
 
     private static final class Entry {
@@ -119,7 +127,8 @@ public class LogScan {
         f.exceptions = e.exceptions;
         f.firstAppFrame = e.firstAppFrame;
         f.example = e.source + ":" + e.line;
-        f.unhandledHttp500 = e.logger.contains("dispatcherServlet") && e.message.contains("threw exception");
+        f.unhandledHttp500 = e.logger.contains("dispatcherServlet") && e.message.contains("threw exception")
+                || e.logger.equals("nginx-access") && e.message.startsWith("HTTP 500 ");
         return f;
     }
 
@@ -205,6 +214,25 @@ public class LogScan {
                     continue;
                 }
             }
+            Matcher nginxError = NGINX_ERROR_LINE.matcher(line);
+            Matcher nginxAccess = NGINX_ACCESS_LINE.matcher(line);
+            if (nginxError.matches() || nginxAccess.matches()) {
+                current = null;
+                String level = nginxError.matches() ? nginxLevel(nginxError.group(1)) : accessLevel(nginxAccess.group(3));
+                if (level != null) {
+                    current = new Entry();
+                    current.level = level;
+                    current.logger = nginxError.matches() ? "nginx" : "nginx-access";
+                    current.message = nginxError.matches()
+                            ? nginxError.group(2).replaceAll("client: [^,]+, ", "")
+                            : "HTTP " + nginxAccess.group(3) + " " + nginxAccess.group(1) + " " + nginxAccess.group(2);
+                    current.source = file.toString();
+                    current.testClass = testClass;
+                    current.line = i + 1;
+                    entries.add(current);
+                }
+                continue;
+            }
             if (MAVEN_LINE.matcher(line).find()) {
                 current = null;
                 continue;
@@ -250,6 +278,20 @@ public class LogScan {
             }
         }
         return entries;
+    }
+
+    /** nginx error-log severity → ERROR / WARN, or null for informational levels. */
+    private static String nginxLevel(String level) {
+        return switch (level) {
+            case "error", "crit", "alert", "emerg" -> "ERROR";
+            case "warn" -> "WARN";
+            default -> null;
+        };
+    }
+
+    /** An access-log response status: any 5xx is an ERROR finding; everything else is not reported. */
+    private static String accessLevel(String status) {
+        return status.startsWith("5") ? "ERROR" : null;
     }
 
     private static String normalise(String message) {
