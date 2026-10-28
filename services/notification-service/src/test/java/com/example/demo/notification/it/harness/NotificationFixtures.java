@@ -1,6 +1,8 @@
 package com.example.demo.notification.it.harness;
 
-/** Named values shared by the notification-service ITs: Kafka topics, STOMP subjects and payload builders. */
+import java.math.BigDecimal;
+
+/** Named values shared by the notification-service ITs: Kafka topics, STOMP subjects and event factories. */
 public final class NotificationFixtures {
 
     public static final String PRICE_TICKS = "price.ticks";
@@ -15,8 +17,8 @@ public final class NotificationFixtures {
     private NotificationFixtures() {
     }
 
-    /** A {@code price.ticks} payload exactly as market-data publishes it ({@code {"symbol":..,"price":..}}). */
-    public static String priceTick(String symbol, String price) {
-        return "{\"symbol\":\"" + symbol + "\",\"price\":" + price + "}";
+    /** A {@code price.ticks} message for {@code symbol} at {@code price}. */
+    public static PriceTick priceTick(String symbol, BigDecimal price) {
+        return new PriceTick(symbol, price);
     }
 }

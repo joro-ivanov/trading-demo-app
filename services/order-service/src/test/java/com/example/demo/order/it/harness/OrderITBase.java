@@ -20,7 +20,6 @@ import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import com.example.demo.common.json.Json;
 import com.example.demo.common.security.Jwt;
 import com.example.demo.order.domain.OrderRepository;
 import com.example.demo.order.domain.OrderStatus;
@@ -32,6 +31,8 @@ import com.example.demo.order.web.OrderResponse;
 import com.github.tomakehurst.wiremock.WireMockServer;
 
 import io.restassured.RestAssured;
+import io.restassured.config.ObjectMapperConfig;
+import io.restassured.config.RestAssuredConfig;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
 
@@ -89,6 +90,9 @@ public abstract class OrderITBase {
     protected static final WireMockServer RISK = new WireMockServer(options().dynamicPort());
 
     protected static final KafkaProbe KAFKA_PROBE;
+    /** REST-Assured serializes {@code .body(dto)} and deserializes {@code .as(Dto.class)} with the project's {@code Json}. */
+    private static final RestAssuredConfig DTO_MAPPING = RestAssuredConfig.config()
+            .objectMapperConfig(new ObjectMapperConfig(new JsonObjectMapper()));
 
     static {
         POSTGRES.start();
@@ -153,6 +157,7 @@ public abstract class OrderITBase {
     /** An unauthenticated JSON request to the running service. */
     protected RequestSpecification api() {
         return RestAssured.given()
+                .config(DTO_MAPPING)
                 .baseUri("http://localhost")
                 .port(port)
                 .contentType(ContentType.JSON);
@@ -164,11 +169,10 @@ public abstract class OrderITBase {
     }
 
     /** Places an order (expecting 201) and returns the response — setup for tests about later steps. */
-    protected OrderResponse place(String token, String body) {
-        String response = api(token).body(body).post(ORDERS_PATH)
+    protected OrderResponse place(String token, Object order) {
+        return api(token).body(order).post(ORDERS_PATH)
                 .then().statusCode(201)
-                .extract().asString();
-        return Json.read(response, OrderResponse.class);
+                .extract().as(OrderResponse.class);
     }
 
     protected OrderStatus statusOf(String orderId) {

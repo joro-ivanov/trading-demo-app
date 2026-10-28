@@ -1,8 +1,12 @@
 package com.example.demo.e2e.framework.pages;
 
+import java.util.Map;
+
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 
+import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.e2e.framework.model.OrderStub;
 import com.example.demo.e2e.framework.model.OrderStatus;
 import com.example.demo.e2e.framework.model.OrderType;
 import com.example.demo.e2e.framework.model.Side;
@@ -27,6 +31,7 @@ public final class OrderTicketPage extends BasePage {
     private static final String PLACE = ".order button[type=submit]";
     private static final String ERROR = ".order .error";
     private static final String STUB_ORDER_ID = "stub-order";
+    private static final String EMPTY_JSON_OBJECT = Json.write(Map.of());
     private static final int STUB_QUANTITY = 10;
 
     private final RouteStub orders = intercept(ORDERS_ROUTE);
@@ -40,7 +45,7 @@ public final class OrderTicketPage extends BasePage {
     /** Fulfil every order POST with the given HTTP status and a body compatible with the UI client. */
     public OrderTicketPage stubOrders(int status) {
         logUi("stub orders status=" + status);
-        orders.fulfill(status, status >= 200 && status < 300 ? successfulOrderBody() : "{}");
+        orders.fulfill(status, status >= 200 && status < 300 ? successfulOrderBody() : EMPTY_JSON_OBJECT);
         return this;
     }
 
@@ -135,22 +140,7 @@ public final class OrderTicketPage extends BasePage {
     }
 
     private static String successfulOrderBody() {
-        return """
-                {
-                  "id": "%s",
-                  "symbol": "%s",
-                  "side": "%s",
-                  "quantity": %d,
-                  "type": "%s",
-                  "limitPrice": null,
-                  "stopPrice": null,
-                  "status": "%s"
-                }""".formatted(
-                        STUB_ORDER_ID,
-                        TradingSymbols.AAPL,
-                        Side.BUY,
-                        STUB_QUANTITY,
-                        OrderType.MARKET,
-                        OrderStatus.SUBMITTED);
+        return Json.write(new OrderStub(
+                STUB_ORDER_ID, TradingSymbols.AAPL, Side.BUY, STUB_QUANTITY, OrderType.MARKET, null, null, OrderStatus.SUBMITTED));
     }
 }

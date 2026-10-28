@@ -122,7 +122,7 @@ final class Stack {
 
     static void post(int port, String token, String path, Object body, int expectedStatus) {
         given().port(port).header("Authorization", "Bearer " + token).contentType(ContentType.JSON)
-                .body(Json.write(body))
+                .body(body, JsonObjectMapper.INSTANCE)
         .when()
                 .post(path)
         .then()
@@ -130,14 +130,13 @@ final class Stack {
     }
 
     static <T> T post(int port, String token, String path, Object body, int expectedStatus, Class<T> type) {
-        String response = given().port(port).header("Authorization", "Bearer " + token).contentType(ContentType.JSON)
-                .body(Json.write(body))
+        return given().port(port).header("Authorization", "Bearer " + token).contentType(ContentType.JSON)
+                .body(body, JsonObjectMapper.INSTANCE)
         .when()
                 .post(path)
         .then()
                 .statusCode(expectedStatus)
-                .extract().asString();
-        return Json.read(response, type);
+                .extract().as(type, JsonObjectMapper.INSTANCE);
     }
 
     static <T> List<T> getList(int port, String token, String path, Class<T> type) {

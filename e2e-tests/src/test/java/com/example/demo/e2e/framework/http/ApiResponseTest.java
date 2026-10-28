@@ -3,6 +3,7 @@ package com.example.demo.e2e.framework.http;
 import static com.example.demo.e2e.framework.support.HttpStatusCodes.OK;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -14,11 +15,13 @@ import com.example.demo.e2e.framework.model.TradingSymbols;
 class ApiResponseTest {
 
     private static final String AAPL_PRICE = "190.12";
-    private static final String SINGLE_PRICE_JSON =
-            "{\"symbol\":\"" + TradingSymbols.AAPL + "\",\"price\":" + AAPL_PRICE + "}";
+    private static final String FIRST_PRICE = "1.50";
     private static final String SECOND_PRICE = "2.50";
-    private static final String PRICE_LIST_JSON = "[{\"symbol\":\"" + TradingSymbols.AAPL + "\",\"price\":1.50},"
-            + "{\"symbol\":\"" + TradingSymbols.MSFT + "\",\"price\":" + SECOND_PRICE + "}]";
+    private static final String SINGLE_PRICE_JSON =
+            Json.write(new Price(TradingSymbols.AAPL, new BigDecimal(AAPL_PRICE)));
+    private static final String PRICE_LIST_JSON = Json.write(List.of(
+            new Price(TradingSymbols.AAPL, new BigDecimal(FIRST_PRICE)),
+            new Price(TradingSymbols.MSFT, new BigDecimal(SECOND_PRICE))));
     private static final int PRICE_COUNT = 2;
     private static final long RESPONSE_TIME_MS = 5;
 

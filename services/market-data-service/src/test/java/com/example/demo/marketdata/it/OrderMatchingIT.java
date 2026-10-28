@@ -3,8 +3,6 @@ package com.example.demo.marketdata.it;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.BUY;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.FEED_SYMBOL;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.ORDERS_SUBMITTED;
-import static com.example.demo.marketdata.it.harness.MarketDataFixtures.ORDER_ID_FIELD;
-import static com.example.demo.marketdata.it.harness.MarketDataFixtures.SYMBOL_FIELD;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.UNCACHED_SYMBOL;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.restingEvent;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.submittedOrder;
@@ -12,6 +10,7 @@ import static com.example.demo.marketdata.it.harness.MarketDataFixtures.submitte
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 
@@ -19,8 +18,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-import com.example.demo.common.json.Json;
 import com.example.demo.marketdata.it.harness.MarketDataITBase;
+import com.example.demo.marketdata.it.harness.OrderRestingEvent;
 import com.example.demo.marketdata.it.harness.stubs.ExchangeFeedStubs;
 import com.example.demo.marketdata.match.FillEvent;
 import com.example.demo.marketdata.match.OrderMatcher;
@@ -36,14 +35,13 @@ class OrderMatchingIT extends MarketDataITBase {
     private static final Duration WAIT = Duration.ofSeconds(20);
 
     private static final String FULL_FILL_ORDER_ID = "ord-full";
-    private static final String FULL_FILL_QUANTITY = "7";
+    private static final BigDecimal FULL_FILL_QUANTITY = new BigDecimal("7");
     /** Quantity of every typed (LIMIT / STOP) order below. */
-    private static final String TYPED_ORDER_QUANTITY = "2";
+    private static final BigDecimal TYPED_ORDER_QUANTITY = new BigDecimal("2");
     private static final String RESTING_ORDER_ID = "ord-resting";
     private static final String LIMIT = "LIMIT";
-    private static final String LIMIT_PRICE_FIELD = "limitPrice";
     /** A BUY limit below the market (190.40), so it is not marketable. */
-    private static final String LIMIT_BELOW_MARKET = "180";
+    private static final BigDecimal LIMIT_BELOW_MARKET = new BigDecimal("180");
 
     @Test
     void orderForAKnownSymbolEmitsExactlyOneFullFill() {
@@ -52,9 +50,10 @@ class OrderMatchingIT extends MarketDataITBase {
         kafka().send(ORDERS_SUBMITTED, FULL_FILL_ORDER_ID,
                 submittedOrder(FULL_FILL_ORDER_ID, FEED_SYMBOL, BUY, FULL_FILL_QUANTITY));
 
-        List<String> fills = kafka().awaitValuesWhere(OrderMatcher.FILLS_TOPIC, ORDER_ID_FIELD, FULL_FILL_ORDER_ID, 1, WAIT);
+        List<FillEvent> fills = kafka().awaitRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::orderId,
+                FULL_FILL_ORDER_ID, 1, WAIT);
         assertThat(fills).hasSize(1);
-        FillEvent fill = Json.read(fills.getFirst(), FillEvent.class);
+        FillEvent fill = fills.getFirst();
         assertSoftly(softly -> {
             softly.assertThat(fill.orderId()).isEqualTo(FULL_FILL_ORDER_ID);
             softly.assertThat(fill.symbol()).isEqualTo(FEED_SYMBOL);
@@ -69,22 +68,23 @@ class OrderMatchingIT extends MarketDataITBase {
     // limit; BUY STOP if market ≥ stop; SELL STOP if market ≤ stop. The "==190.40" rows pin the
     // inclusive boundary (≤/≥, not </>). Every fill must be at the MARKET price (so a LIMIT gets
     // price improvement — it never fills at its stated limit).
-    @ParameterizedTest(name = "{1} {2} {3}={4} fills at market 190.40")
+    @ParameterizedTest(name = "{1} {2} limitPrice={3} stopPrice={4} fills at market 190.40")
     @CsvSource({
-        "ord-fill-LIMITBUY19040,LIMIT,BUY,limitPrice,190.40", "ord-fill-LIMITBUY200,LIMIT,BUY,limitPrice,200",
-        "ord-fill-LIMITSELL19040,LIMIT,SELL,limitPrice,190.40", "ord-fill-LIMITSELL180,LIMIT,SELL,limitPrice,180",
-        "ord-fill-STOPBUY19040,STOP,BUY,stopPrice,190.40", "ord-fill-STOPBUY180,STOP,BUY,stopPrice,180",
-        "ord-fill-STOPSELL19040,STOP,SELL,stopPrice,190.40", "ord-fill-STOPSELL200,STOP,SELL,stopPrice,200"
+        "ord-fill-LIMITBUY19040,LIMIT,BUY,190.40,", "ord-fill-LIMITBUY200,LIMIT,BUY,200,",
+        "ord-fill-LIMITSELL19040,LIMIT,SELL,190.40,", "ord-fill-LIMITSELL180,LIMIT,SELL,180,",
+        "ord-fill-STOPBUY19040,STOP,BUY,,190.40", "ord-fill-STOPBUY180,STOP,BUY,,180",
+        "ord-fill-STOPSELL19040,STOP,SELL,,190.40", "ord-fill-STOPSELL200,STOP,SELL,,200"
     })
-    void marketableTypedOrderFillsAtMarketPrice(String id, String type, String side, String field, String price) {
+    void marketableTypedOrderFillsAtMarketPrice(String id, String type, String side, BigDecimal limitPrice,
+                                                BigDecimal stopPrice) {
         awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
         kafka().send(ORDERS_SUBMITTED, id,
-                submittedTypedOrder(id, FEED_SYMBOL, side, TYPED_ORDER_QUANTITY, type, field, price));
+                submittedTypedOrder(id, FEED_SYMBOL, side, TYPED_ORDER_QUANTITY, type, limitPrice, stopPrice));
 
-        List<String> fills = kafka().awaitValuesWhere(OrderMatcher.FILLS_TOPIC, ORDER_ID_FIELD, id, 1, WAIT);
+        List<FillEvent> fills = kafka().awaitRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::orderId, id, 1, WAIT);
         assertThat(fills).hasSize(1);
-        FillEvent fill = Json.read(fills.getFirst(), FillEvent.class);
+        FillEvent fill = fills.getFirst();
         assertSoftly(softly -> {
             softly.assertThat(fill.side()).isEqualTo(side);
             softly.assertThat(fill.quantity()).isEqualByComparingTo(TYPED_ORDER_QUANTITY);
@@ -94,20 +94,22 @@ class OrderMatchingIT extends MarketDataITBase {
 
     // The mirror: a non-marketable LIMIT/STOP on each side rests and emits NO fill. The SELL STOP row
     // is the "stop that never triggers" case (a stop-loss that didn't fire).
-    @ParameterizedTest(name = "{1} {2} {3}={4} rests at 190.40")
+    @ParameterizedTest(name = "{1} {2} limitPrice={3} stopPrice={4} rests at 190.40")
     @CsvSource({
-        "ord-nofill-LIMITBUY180,LIMIT,BUY,limitPrice,180", "ord-nofill-LIMITSELL200,LIMIT,SELL,limitPrice,200",
-        "ord-nofill-STOPBUY200,STOP,BUY,stopPrice,200", "ord-nofill-STOPSELL180,STOP,SELL,stopPrice,180"
+        "ord-nofill-LIMITBUY180,LIMIT,BUY,180,", "ord-nofill-LIMITSELL200,LIMIT,SELL,200,",
+        "ord-nofill-STOPBUY200,STOP,BUY,,200", "ord-nofill-STOPSELL180,STOP,SELL,,180"
     })
-    void nonMarketableTypedOrderRestsWithoutAFill(String id, String type, String side, String field, String price) {
+    void nonMarketableTypedOrderRestsWithoutAFill(String id, String type, String side, BigDecimal limitPrice,
+                                                  BigDecimal stopPrice) {
         awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
         kafka().send(ORDERS_SUBMITTED, id,
-                submittedTypedOrder(id, FEED_SYMBOL, side, TYPED_ORDER_QUANTITY, type, field, price));
+                submittedTypedOrder(id, FEED_SYMBOL, side, TYPED_ORDER_QUANTITY, type, limitPrice, stopPrice));
 
-        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, ORDER_ID_FIELD, id, 1, WAIT))
+        assertThat(kafka().awaitRecordsWhere(OrderMatcher.RESTING_TOPIC, OrderRestingEvent.class,
+                OrderRestingEvent::orderId, id, 1, WAIT))
                 .containsExactly(restingEvent(id));
-        assertThat(kafka().currentValuesWhere(OrderMatcher.FILLS_TOPIC, ORDER_ID_FIELD, id)).isEmpty();
+        assertThat(kafka().currentRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::orderId, id)).isEmpty();
     }
 
     // A non-marketable order emits an orders.resting event (so order-service can mark it PENDING).
@@ -116,25 +118,27 @@ class OrderMatchingIT extends MarketDataITBase {
         awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
         kafka().send(ORDERS_SUBMITTED, RESTING_ORDER_ID, submittedTypedOrder(RESTING_ORDER_ID, FEED_SYMBOL, BUY,
-                TYPED_ORDER_QUANTITY, LIMIT, LIMIT_PRICE_FIELD, LIMIT_BELOW_MARKET));
+                TYPED_ORDER_QUANTITY, LIMIT, LIMIT_BELOW_MARKET, null));
 
-        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, ORDER_ID_FIELD, RESTING_ORDER_ID, 1, WAIT))
+        assertThat(kafka().awaitRecordsWhere(OrderMatcher.RESTING_TOPIC, OrderRestingEvent.class,
+                OrderRestingEvent::orderId, RESTING_ORDER_ID, 1, WAIT))
                 .containsExactly(restingEvent(RESTING_ORDER_ID));
     }
 
     // A symbol with no cached price never fills, whatever the type: the no-price guard runs before the
     // marketability check (so a would-be-marketable LIMIT doesn't NPE on a null price); the order rests.
     @ParameterizedTest(name = "{0}: uncached symbol rests without a fill")
-    @CsvSource(delimiter = '|', value = {
-        "ord-zzz|{\"id\":\"ord-zzz\",\"symbol\":\"ZZZZ\",\"side\":\"BUY\",\"quantity\":5,\"status\":\"SUBMITTED\"}",
-        "ord-limit-nocache|{\"id\":\"ord-limit-nocache\",\"symbol\":\"ZZZZ\",\"side\":\"BUY\",\"quantity\":2,"
-                + "\"type\":\"LIMIT\",\"limitPrice\":1000000,\"status\":\"SUBMITTED\"}"
+    @CsvSource({
+        "ord-zzz, 5, , ",
+        "ord-limit-nocache, 2, LIMIT, 1000000"
     })
-    void orderForAnUncachedSymbolRestsWithoutAFill(String id, String order) {
-        kafka().send(ORDERS_SUBMITTED, id, order);
+    void orderForAnUncachedSymbolRestsWithoutAFill(String id, BigDecimal quantity, String type, BigDecimal limitPrice) {
+        kafka().send(ORDERS_SUBMITTED, id, submittedTypedOrder(id, UNCACHED_SYMBOL, BUY, quantity, type, limitPrice, null));
 
-        assertThat(kafka().awaitValuesWhere(OrderMatcher.RESTING_TOPIC, ORDER_ID_FIELD, id, 1, WAIT))
+        assertThat(kafka().awaitRecordsWhere(OrderMatcher.RESTING_TOPIC, OrderRestingEvent.class,
+                OrderRestingEvent::orderId, id, 1, WAIT))
                 .containsExactly(restingEvent(id));
-        assertThat(kafka().currentValuesWhere(OrderMatcher.FILLS_TOPIC, SYMBOL_FIELD, UNCACHED_SYMBOL)).isEmpty();
+        assertThat(kafka().currentRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::symbol,
+                UNCACHED_SYMBOL)).isEmpty();
     }
 }

@@ -50,8 +50,14 @@ public abstract class NotificationITBase {
         stomp.disconnectAll();
     }
 
-    /** Publishes one record to {@code topic} and waits until Kafka has acknowledged it. */
-    protected static void produce(String topic, String key, String payload) {
-        KafkaProbe.produce(KAFKA.getBootstrapServers(), topic, key, payload);
+    /** Publishes {@code event} (serialized with {@code Json}) to {@code topic} and waits until Kafka has acknowledged it. */
+    protected static void produce(String topic, String key, Object event) {
+        KafkaProbe.produce(KAFKA.getBootstrapServers(), topic, key, event);
+    }
+
+    /** Publishes {@code payload} verbatim: only for malformed messages no event record can produce. */
+    @RawJsonPayload(reason = "raw sender for malformed Kafka messages")
+    protected static void produceRaw(String topic, String key, String payload) {
+        KafkaProbe.produceRaw(KAFKA.getBootstrapServers(), topic, key, payload);
     }
 }

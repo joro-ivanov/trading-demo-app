@@ -47,13 +47,15 @@ services/<svc>/src/test/java/com/example/demo/<pkg>/it/
     `.claude/skills/it-gen/IntegrationTestArchitectureTest.template.java` (replace `__PKG__` / `__NAME__`)
   - `<Svc>TestAssertionsArchitectureTest`, generated from
     `.claude/skills/it-gen/TestAssertionsArchitectureTest.template.java` (same placeholders): exact-value
-    assertions in all of the module's tests
+    assertions, DTO-only payloads and no hand-read JSON in all of the module's tests
+  - `it/harness/RawJsonPayload`, generated from `.claude/skills/it-gen/RawJsonPayload.template.java`
+    (replace `__PKG__` with the harness package)
   - `<Svc>ArchitectureTest` (the new services already have one with `neverProduceInternalServerError`)
   - the container log consumers and `logback-test.xml` file appenders, for every container it starts
     (`.withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.<name>")))`, logged to
     `target/container-logs/<name>.log`)
   Its `pom.xml` also needs the `rest-assured` test dependency, the `jacoco-maven-plugin`, and the
-  `maven-pmd-plugin` block with both rulesets (copy from `services/auth-service/pom.xml`).
+  `maven-pmd-plugin` block with all its rulesets (incl. `no-raw-json.xml`) (copy from `services/auth-service/pom.xml`).
 
 ### `<Svc>ITBase` shape
 
@@ -80,7 +82,7 @@ services/<svc>/src/test/java/com/example/demo/<pkg>/it/
   test read timeout** (e.g. 3000 ms against 1 s) and expect 503 `<Dependency> unavailable`. Never use
   a delay close to the timeout (that's a race). And never a delay just under it to prove "slow but OK":
   assert that only with a delay far below the timeout.
-- The JSON must match the **provider's real DTO** (e.g. `portfolio/web/HoldingResponse.java`,
+- The stub body is a **test-side record** (in `harness/stubs/`) serialized with `Json.write`, and it must match the **provider's real DTO** (e.g. `portfolio/web/HoldingResponse.java`,
   `marketdata/web/PriceResponse.java`) or the exchange mapping in `infra/wiremock/mappings/`. Build it
   from fields named exactly like the provider record, so a provider change shows up as a fixture change.
 - Use `urlPathEqualTo` + exact query/body matchers. Avoid `anyUrl()`, so a wrong request becomes an
@@ -97,7 +99,7 @@ services/<svc>/src/test/java/com/example/demo/<pkg>/it/
    with `@CsvSource` / `@MethodSource` (`Stream.of(Arguments.of(...))`). Every row is one scenario and
    uses the same assertions. Different assertion shapes → separate tests.
 4. **Assert exactly**: the status code, the **full** response body (`as(Dto.class)` + `assertSoftly`,
-   or JSON field equality), the persisted state (repository/SQL), side effects (Kafka record fields via
+   never a JSON string or path), the persisted state (repository/SQL), side effects (Kafka record fields via
    `KafkaProbe`, `WireMock.verify(...)` of the outbound request with its body), and the error body for
    failures (`status`, `error`, `message`).
    **No weak or non-deterministic assertions** (enforced in every test of every backend module by the generated `<Module>TestAssertionsArchitectureTest` and
@@ -144,11 +146,37 @@ services/<svc>/src/test/java/com/example/demo/<pkg>/it/
    - as prose that is never compared: the first argument of `Allure.step` / `as` / `describedAs` /
      `withFailMessage`, or an `AssertionError` / `IllegalStateException` message
 
-   Status codes, quantities, prices, symbols, paths, JSON bodies and expected messages all need a
+   Status codes, quantities, prices, symbols, paths and expected messages all need a
    name. Prefer existing types (`HttpStatus.CREATED.value()`, enums, `TradingSymbols`). Names must be
    **semantic** (`ORDER_QUANTITY`, `INSUFFICIENT_FUNDS_MESSAGE`), never value-echoes (`TEN = 10`,
-   `S_201`). Values or JSON bodies shared across classes go into `harness/` (e.g. `OrderJson.market(…)`),
+   `S_201`). Values and DTO factories shared across classes go into `harness/` (e.g. `Orders.market(…)`),
    which is plumbing and exempt.
+
+7. **DTOs only: never build or read JSON by hand.**
+   - **Send objects:** REST-Assured `.body(dto)`, Kafka/WS/WireMock payloads through `Json.write(dto)`.
+     The harness configures REST-Assured to serialize with the project's `Json`.
+   - **Assert on objects:** deserialize every response, error body, Kafka record and STOMP frame with
+     `Json.read` / `.as(Dto.class)` / `asList`, and assert on the object (fields, `isEqualTo(expectedDto)`).
+     Never compare JSON strings. Never use JsonPath / `JsonNode` / `readTree`, REST-Assured
+     `body("path", matcher)`, or WireMock `matchingJsonPath`.
+   - **Where DTOs come from:**
+     - the service's own records (request/response/event)
+     - for another service's contract (stubs), notification frames and error bodies: test-side
+       records in `harness/` mirroring that contract (e.g. `harness/stubs/HoldingResponse`,
+       `harness/ApiError`)
+   - **Only exception: `@RawJsonPayload(reason = "…")`.** Put it on the test method (or a harness
+     raw sender) when the scenario needs a payload no DTO can express: a wrong JSON type, missing vs
+     `null`, syntactically broken JSON, a malformed Kafka/WS message. Its data tables count as inside
+     it. Never use it on a positive scenario.
+   - **Enforced by:**
+     - PMD `build/pmd/no-raw-json.xml` (JSON-looking literals outside the annotation)
+     - ArchUnit `testsNeverReadRawJson` / `rawPayloadsOnlyFromAnnotatedMethods` /
+       `rawJsonPayloadOnlyOnTestsOrHarness` (generated `<Module>TestAssertionsArchitectureTest`; e2e:
+       `E2eArchitectureTest`)
+     - TestLint
+     - the e2e `ApiRequest.Builder.body(Object)`, which rejects a `String` (use `rawBody`, annotated)
+   - A violation is a **hard cap of 0**. Note: ArchUnit sees a call made inside a lambda as coming
+     from the lambda, not the annotated method, so make raw sends outside lambdas.
 
 ## HTTP 500 is never expected
 

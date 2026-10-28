@@ -4,12 +4,12 @@ import static com.example.demo.auth.it.harness.AuthFixtures.ALICE;
 import static com.example.demo.auth.it.harness.AuthFixtures.LOGIN;
 import static com.example.demo.auth.it.harness.AuthFixtures.SEEDED_PASSWORD;
 import static com.example.demo.auth.it.harness.AuthFixtures.TOKEN_TTL_SECONDS;
-import static com.example.demo.auth.it.harness.AuthFixtures.loginBody;
+import static com.example.demo.auth.it.harness.AuthFixtures.loginRequest;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpStatus;
 
 import com.example.demo.auth.it.harness.AuthITBase;
@@ -25,7 +25,7 @@ class LoginIT extends AuthITBase {
     @Test
     void loginIssuesAToken() {
         String body = api()
-                .body(loginBody(ALICE.username(), SEEDED_PASSWORD))
+                .body(loginRequest(ALICE.username(), SEEDED_PASSWORD))
                 .post(LOGIN)
                 .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
@@ -40,7 +40,7 @@ class LoginIT extends AuthITBase {
     @Test
     void loginWithWrongPasswordIsUnauthorized() {
         api()
-                .body(loginBody(ALICE.username(), WRONG_PASSWORD))
+                .body(loginRequest(ALICE.username(), WRONG_PASSWORD))
                 .post(LOGIN)
                 .then().statusCode(HttpStatus.UNAUTHORIZED.value());
     }
@@ -48,20 +48,20 @@ class LoginIT extends AuthITBase {
     @Test
     void loginWithUnknownUserIsUnauthorized() {
         api()
-                .body(loginBody(UNKNOWN_USERNAME, SEEDED_PASSWORD))
+                .body(loginRequest(UNKNOWN_USERNAME, SEEDED_PASSWORD))
                 .post(LOGIN)
                 .then().statusCode(HttpStatus.UNAUTHORIZED.value());
     }
 
     // Blank username or password fails @NotBlank validation -> 400.
-    @ParameterizedTest(name = "blank login field -> 400: {0}")
-    @ValueSource(strings = {
-        "{\"username\":\"\",\"password\":\"password\"}",
-        "{\"username\":\"alice\",\"password\":\"\"}"
+    @ParameterizedTest(name = "blank login field -> 400: username={0}, password={1}")
+    @CsvSource({
+        "'', password",
+        "alice, ''"
     })
-    void rejectsBlankLoginFieldsWith400(String body) {
+    void rejectsBlankLoginFieldsWith400(String username, String password) {
         api()
-                .body(body)
+                .body(loginRequest(username, password))
                 .post(LOGIN)
                 .then().statusCode(HttpStatus.BAD_REQUEST.value());
     }

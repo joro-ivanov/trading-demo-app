@@ -37,6 +37,11 @@ cd frontend/web-dashboard && npm run lint && npm run typecheck && npm run test:u
   ITs must not use weak or non-deterministic assertions (`contains`, `doesNotContain`, ranges, `isNotNull`/
   `isNotBlank`, Hamcrest `containsString`, WireMock `containing`). `<Module>TestAssertionsArchitectureTest`
   enforces this in every backend module. Make the value deterministic instead (own owner per test, seed reset, fixed clock).
+- **DTOs only, never hand-built or hand-read JSON** (all test code incl. harness and the e2e framework): send
+  DTOs/records (`.body(dto)`, `Json.write(dto)`), deserialize every response/message and assert on the object.
+  No JSON string literals, JsonPath, `JsonNode`, `readTree`, `body("path", matcher)` or raw `body(String)`, except
+  in a method annotated `@RawJsonPayload(reason = "…")` for an invalid-payload scenario. PMD
+  `build/pmd/no-raw-json.xml` and the ArchUnit rules enforce it; `/it-gen` scores a violation 0.
 - `*IT` = integration test (Failsafe, `verify`); `*Test` = unit/ArchUnit (Surefire).
 - Per-service ITs mock **only external communication** (WireMock HTTP/WS); Postgres/Kafka/Redis are real
   containers. Never mock internal beans.

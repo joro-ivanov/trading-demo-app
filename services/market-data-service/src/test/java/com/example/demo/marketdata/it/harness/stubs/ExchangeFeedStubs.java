@@ -6,12 +6,17 @@ import static com.github.tomakehurst.wiremock.client.WireMock.message;
 import static com.github.tomakehurst.wiremock.client.WireMock.messageStubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.sendMessage;
 
+import java.math.BigDecimal;
+
 import com.github.tomakehurst.wiremock.WireMockServer;
+
+import com.example.demo.common.json.Json;
+import com.example.demo.marketdata.model.PriceTick;
 
 /**
  * Behaviour-named stubs for the exchange's raw WebSocket price feed (docs/testing-cookbook.md §2).
  * The service sends {@code subscribe:<symbol>} on connect; the stub replies on the same channel with
- * frames shaped like {@code com.example.demo.marketdata.model.PriceTick} ({@code symbol}, {@code price}).
+ * {@code com.example.demo.marketdata.model.PriceTick} records serialized with {@code Json}.
  */
 public final class ExchangeFeedStubs {
 
@@ -34,6 +39,6 @@ public final class ExchangeFeedStubs {
     }
 
     private static String tick(String symbol, String price) {
-        return "{\"symbol\":\"" + symbol + "\",\"price\":" + price + "}";
+        return Json.write(new PriceTick(symbol, new BigDecimal(price)));
     }
 }

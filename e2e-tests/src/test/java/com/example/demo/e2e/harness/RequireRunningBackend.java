@@ -11,6 +11,8 @@ import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 import com.example.demo.e2e.framework.config.Config;
+import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.e2e.framework.model.LoginRequest;
 
 /**
  * Asserts the backend is already running before the API e2e tests execute. The e2e tests run
@@ -20,6 +22,9 @@ import com.example.demo.e2e.framework.config.Config;
  * is skipped. Target URLs come from {@code Config} ({@code -D}/env override per environment).
  */
 public final class RequireRunningBackend implements BeforeAllCallback {
+
+    private static final String PROBE_USERNAME = "demo";
+    private static final String PROBE_PASSWORD = "password";
 
     @Override
     public void beforeAll(ExtensionContext context) {
@@ -37,7 +42,7 @@ public final class RequireRunningBackend implements BeforeAllCallback {
             connection.setReadTimeout(1500);
             connection.setDoOutput(true);
             try (OutputStream out = connection.getOutputStream()) {
-                out.write("{\"username\":\"demo\",\"password\":\"password\"}".getBytes(StandardCharsets.UTF_8));
+                out.write(Json.write(new LoginRequest(PROBE_USERNAME, PROBE_PASSWORD)).getBytes(StandardCharsets.UTF_8));
             }
             int status = connection.getResponseCode();
             connection.disconnect();

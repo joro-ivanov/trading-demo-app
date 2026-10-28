@@ -159,7 +159,8 @@ class SecurityTest extends BaseApiTest {
         OrderResponse placedOrder = placed.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(placed.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(placedOrder.id()).isNotBlank();
+            softly.assertThat(OrderHistoryService.history(aliceToken).asList(OrderResponse.class))
+                    .extracting(OrderResponse::id).containsExactly(placedOrder.id());
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
             softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);
@@ -189,7 +190,8 @@ class SecurityTest extends BaseApiTest {
         OrderResponse placedOrder = placed.as(OrderResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(placed.statusCode()).isEqualTo(CREATED);
-            softly.assertThat(placedOrder.id()).isNotBlank();
+            softly.assertThat(OrderHistoryService.history(aliceToken).asList(OrderResponse.class))
+                    .extracting(OrderResponse::id).containsExactly(placedOrder.id());
             softly.assertThat(placedOrder.symbol()).isEqualTo(TradingSymbols.AAPL);
             softly.assertThat(placedOrder.side()).isEqualTo(Side.BUY);
             softly.assertThat(placedOrder.quantity()).isEqualByComparingTo(BigDecimal.ONE);

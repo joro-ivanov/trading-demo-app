@@ -1,8 +1,12 @@
 package com.example.demo.marketdata.it.harness;
 
+import java.math.BigDecimal;
+
+import com.example.demo.marketdata.match.OrderSubmittedEvent;
+
 /**
- * Named values and payload builders shared by the market-data-service ITs. The builders produce the
- * exact JSON order-service publishes on {@code orders.submitted} and the matcher on {@code orders.resting}.
+ * Named values and event factories shared by the market-data-service ITs: the {@code orders.submitted}
+ * events order-service publishes and the matcher's {@code orders.resting} event, as records.
  */
 public final class MarketDataFixtures {
 
@@ -12,10 +16,10 @@ public final class MarketDataFixtures {
     public static final String UNCACHED_SYMBOL = "ZZZZ";
 
     public static final String ORDERS_SUBMITTED = "orders.submitted";
-    public static final String ORDER_ID_FIELD = "orderId";
-    public static final String SYMBOL_FIELD = "symbol";
 
     public static final String BUY = "BUY";
+    /** The status order-service publishes every new order with. */
+    public static final String SUBMITTED = "SUBMITTED";
     /** JWT subject when the caller's identity does not matter. */
     public static final String TEST_SUBJECT = "tester";
 
@@ -28,22 +32,19 @@ public final class MarketDataFixtures {
         return PRICES + symbol;
     }
 
-    /** A MARKET order as published on {@code orders.submitted}. */
-    public static String submittedOrder(String id, String symbol, String side, String quantity) {
-        return "{\"id\":\"" + id + "\",\"symbol\":\"" + symbol + "\",\"side\":\"" + side
-                + "\",\"quantity\":" + quantity + ",\"status\":\"SUBMITTED\"}";
+    /** A MARKET order as published on {@code orders.submitted} (no type, no prices, no owner). */
+    public static OrderSubmittedEvent submittedOrder(String id, String symbol, String side, BigDecimal quantity) {
+        return new OrderSubmittedEvent(id, symbol, side, quantity, null, null, null, SUBMITTED, null);
     }
 
-    /** A LIMIT/STOP order; {@code priceField} is {@code limitPrice} or {@code stopPrice}. */
-    public static String submittedTypedOrder(String id, String symbol, String side, String quantity,
-                                             String type, String priceField, String price) {
-        return "{\"id\":\"" + id + "\",\"symbol\":\"" + symbol + "\",\"side\":\"" + side
-                + "\",\"quantity\":" + quantity + ",\"type\":\"" + type + "\",\"" + priceField + "\":" + price
-                + ",\"status\":\"SUBMITTED\"}";
+    /** A LIMIT/STOP order; the price the type does not use is {@code null}. */
+    public static OrderSubmittedEvent submittedTypedOrder(String id, String symbol, String side, BigDecimal quantity,
+                                                          String type, BigDecimal limitPrice, BigDecimal stopPrice) {
+        return new OrderSubmittedEvent(id, symbol, side, quantity, type, limitPrice, stopPrice, SUBMITTED, null);
     }
 
     /** The matcher's {@code orders.resting} event for {@code orderId}. */
-    public static String restingEvent(String orderId) {
-        return "{\"orderId\":\"" + orderId + "\"}";
+    public static OrderRestingEvent restingEvent(String orderId) {
+        return new OrderRestingEvent(orderId);
     }
 }

@@ -9,7 +9,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 
-import com.example.demo.common.json.Json;
 import com.example.demo.portfolio.it.harness.PortfolioITBase;
 import com.example.demo.portfolio.web.FundsDtos.BalanceResponse;
 
@@ -24,15 +23,15 @@ class DepositIT extends PortfolioITBase {
     void depositThenBalanceReflectsIt() {
         String token = token(DEPOSITING_OWNER);
 
-        String body = api(token)
-                .body(amountBody(DEPOSIT_AMOUNT))
+        BalanceResponse response = api(token)
+                .body(amount(DEPOSIT_AMOUNT))
                 .post(DEPOSIT_PATH)
                 .then().statusCode(HttpStatus.OK.value())
-                .extract().asString();
+                .extract().as(BalanceResponse.class);
 
         BigDecimal balance = balanceCash(token);
         assertSoftly(softly -> {
-            softly.assertThat(Json.read(body, BalanceResponse.class).cash()).isEqualByComparingTo(DEPOSIT_AMOUNT);
+            softly.assertThat(response.cash()).isEqualByComparingTo(DEPOSIT_AMOUNT);
             softly.assertThat(balance).isEqualByComparingTo(DEPOSIT_AMOUNT);
         });
     }
@@ -41,7 +40,7 @@ class DepositIT extends PortfolioITBase {
     @ValueSource(strings = {"-5", "0"})
     void aNonPositiveAmountIsRejectedWith400(String amount) {
         api(token(INVALID_DEPOSIT_OWNER))
-                .body(amountBody(amount))
+                .body(amount(amount))
                 .post(DEPOSIT_PATH)
                 .then().statusCode(HttpStatus.BAD_REQUEST.value());
     }

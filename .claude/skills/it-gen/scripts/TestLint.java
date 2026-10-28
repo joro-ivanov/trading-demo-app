@@ -45,6 +45,8 @@ public class TestLint {
             new Rule("expects HTTP 500 (outage = 503, bad upstream answer = 502)", Pattern.compile(
                     "statusCode\\s*\\(\\s*500\\s*\\)|(?<![\\w$])status\\s*\\(\\s*500\\s*\\)|INTERNAL_SERVER_ERROR|isInternalServerError|internalServerError\\s*\\("), true),
             // Same list as the <Svc>IntegrationTestArchitectureTest ArchUnit rule (the authority).
+            new Rule("hand-read JSON (deserialize into a DTO and assert on the object)", Pattern.compile(
+                    "\\.body\\(\\s*\"[SJ]\"\\s*,|\\bjsonPath\\(|\\breadTree\\(|\\bJsonNode\\b|\\bmatchingJsonPath\\(|\\bJsonPath\\b")),
             new Rule("weak/non-deterministic assertion (assert the exact value)", Pattern.compile(
                     "(?<![\\w$])(contains|containsAll|containsAnyOf|containsAnyElementsOf|containsSequence"
                     + "|containsSubsequence|containsOnlyOnce|containsIgnoringCase|containsIgnoringWhitespaces"
@@ -108,6 +110,10 @@ public class TestLint {
                 }
             }
         }
+        for (int i : rawJsonLines(lines)) {
+            out.add(file + ":" + (i + 1) + ": hand-written JSON (send/assert DTOs; raw JSON only in a @RawJsonPayload method): "
+                    + lines[i].trim());
+        }
         for (int i : magicValueLines(lines)) {
             out.add(file + ":" + (i + 1) + ": magic value (name it: constant, local variable or annotation data table): "
                     + lines[i].trim());
@@ -124,7 +130,7 @@ public class TestLint {
             "(?:\\.(?:step|as|describedAs|withFailMessage|overridingErrorMessage)"
                     + "|new (?:AssertionError|IllegalStateException|IllegalArgumentException))"
                     + "\\(\\s*\"S\"(?:\\s*\\+\\s*[^,)\"]*(?:\"S\")?)*");
-    private static final Pattern NON_EMPTY_STRING = Pattern.compile("\"S\"");
+    private static final Pattern NON_EMPTY_STRING = Pattern.compile("\"[SJ]\"");
     private static final Pattern NUMBER = Pattern.compile(
             "(?<![\\w$.])(\\d[\\d_]*(?:\\.\\d+)?)(?:[eE][+-]?\\d+)?[lLfFdD]?(?![\\w.])");
 
@@ -132,6 +138,53 @@ public class TestLint {
      * Lines (0-based) with a string other than "" or a number other than 0/1, outside annotations, final
      * declarations (any depth, multi-line), simple local-variable initializers, and prose arguments.
      */
+    // ---- DTOs only (approximates PMD NoRawJsonOutsideRawJsonPayload in build/pmd/no-raw-json.xml) ----
+
+    private static final Pattern JSON_KEY = Pattern.compile("\\\\\"[A-Za-z_$][A-Za-z0-9_$]*\\\\\"\\s*:|\"[A-Za-z_$][A-Za-z0-9_$]*\"\\s*:");
+    private static final Pattern JSON_START = Pattern.compile("^\\s*(\\{\\s*(\\\\\"|\")|\\[\\s*(\\{|\\\\\"|\"|-?[0-9]))");
+    private static final Pattern RAW_JSON_LITERAL = Pattern.compile("\"J\"");
+    private static final Pattern METHOD_DECLARATION = Pattern.compile("^\\s*[\\w<>\\[\\],? ]*\\b\\w+\\s*\\([^;]*$");
+
+    /** Same detection as the PMD rule: a quoted key with a colon, or an object/array start. */
+    private static boolean looksLikeJson(String content) {
+        return JSON_KEY.matcher(content).find() || JSON_START.matcher(content).find();
+    }
+
+    /**
+     * Lines (0-based) with a JSON-looking literal outside a @RawJsonPayload method (its own annotation
+     * data tables count as inside it): from the annotation to the end of the method's body.
+     */
+    private static List<Integer> rawJsonLines(String[] lines) {
+        List<Integer> hits = new ArrayList<>();
+        boolean pendingAnnotation = false;
+        boolean inRawMethod = false;
+        int depth = 0;
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            if (line.contains("@RawJsonPayload")) {
+                pendingAnnotation = true;
+            }
+            boolean exempt = pendingAnnotation || inRawMethod;
+            if (!exempt && RAW_JSON_LITERAL.matcher(line).find()) {
+                hits.add(i);
+            }
+            if (pendingAnnotation && !line.trim().startsWith("@") && METHOD_DECLARATION.matcher(line).find()
+                    && line.contains("{")) {
+                pendingAnnotation = false;
+                inRawMethod = true;
+                depth = braceChange(line);
+            } else if (inRawMethod) {
+                depth += braceChange(line);
+                inRawMethod = depth > 0;
+            }
+        }
+        return hits;
+    }
+
+    private static int braceChange(String line) {
+        return (int) (line.chars().filter(ch -> ch == '{').count() - line.chars().filter(ch -> ch == '}').count());
+    }
+
     private static List<Integer> magicValueLines(String[] lines) {
         List<Integer> hits = new ArrayList<>();
         int annotationDepth = 0;
@@ -204,7 +257,7 @@ public class TestLint {
             } else if (src.startsWith("\"\"\"", i)) {
                 int end = src.indexOf("\"\"\"", i + 3);
                 end = end < 0 ? n : end + 3;
-                b.append("\"S\"");
+                b.append(looksLikeJson(src.substring(i + 3, Math.max(i + 3, end - 3))) ? "\"J\"" : "\"S\"");
                 blank(b, src, i + 3, end);
                 i = end;
             } else if (c == '"' || c == '\'') {
@@ -213,7 +266,8 @@ public class TestLint {
                     j += src.charAt(j) == '\\' ? 2 : 1;
                 }
                 // Keep "" for an empty string (allowed) and "S" for any other, so magic values stay visible.
-                b.append(c).append(c == '"' && j > i + 1 ? "S" : "").append(c);
+                String content = src.substring(i + 1, Math.min(j, n));
+                b.append(c).append(c == '"' && j > i + 1 ? (looksLikeJson(content) ? "J" : "S") : "").append(c);
                 i = Math.min(j + 1, n);
             } else {
                 b.append(c);

@@ -1,10 +1,12 @@
 package com.example.demo.auth.it.harness;
 
+import com.example.demo.auth.web.AuthDtos.LoginRequest;
+import com.example.demo.auth.web.AuthDtos.RegisterRequest;
 import com.example.demo.auth.web.AuthDtos.UserResponse;
 
 /**
  * Named values and request bodies shared by the auth-service ITs: endpoints, the Flyway-seeded users
- * (V1__users.sql, all with password {@code password}), the token lifetime and JSON body builders.
+ * (V1__users.sql, all with password {@code password}), the token lifetime and request DTO factories.
  */
 public final class AuthFixtures {
 
@@ -28,12 +30,12 @@ public final class AuthFixtures {
     private AuthFixtures() {
     }
 
-    public static String loginBody(String username, String password) {
-        return "{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}";
+    public static LoginRequest loginRequest(String username, String password) {
+        return new LoginRequest(username, password);
     }
 
-    public static String registerBody(String username, String email, String password) {
-        return "{\"username\":\"" + username + "\",\"email\":\"" + email + "\",\"password\":\"" + password + "\"}";
+    public static RegisterRequest registerRequest(String username, String email, String password) {
+        return new RegisterRequest(username, email, password);
     }
 
     /** The demo e-mail address for {@code localPart} ({@code <localPart>@demo.example.com}). */

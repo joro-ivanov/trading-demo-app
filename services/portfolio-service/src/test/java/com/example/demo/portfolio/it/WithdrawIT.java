@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
-import com.example.demo.common.json.Json;
 import com.example.demo.portfolio.it.harness.PortfolioITBase;
 import com.example.demo.portfolio.web.FundsDtos.BalanceResponse;
 
@@ -25,19 +24,19 @@ class WithdrawIT extends PortfolioITBase {
         String token = token(WITHDRAWING_OWNER);
         deposit(token, DEPOSIT_AMOUNT);
 
-        String body = api(token)
-                .body(amountBody(WITHDRAWAL_AMOUNT))
+        BalanceResponse response = api(token)
+                .body(amount(WITHDRAWAL_AMOUNT))
                 .post(WITHDRAW_PATH)
                 .then().statusCode(HttpStatus.OK.value())
-                .extract().asString();
+                .extract().as(BalanceResponse.class);
 
-        assertThat(Json.read(body, BalanceResponse.class).cash()).isEqualByComparingTo(REMAINING_CASH);
+        assertThat(response.cash()).isEqualByComparingTo(REMAINING_CASH);
     }
 
     @Test
     void withdrawingMoreThanAvailableIsRejectedWith422() {
         api(token(OVERDRAWING_OWNER))
-                .body(amountBody(OVERDRAW_AMOUNT))
+                .body(amount(OVERDRAW_AMOUNT))
                 .post(WITHDRAW_PATH)
                 .then().statusCode(HttpStatus.UNPROCESSABLE_ENTITY.value());
     }

@@ -26,6 +26,7 @@ import com.example.demo.e2e.framework.http.ApiResponse;
 import com.example.demo.e2e.framework.model.Login;
 import com.example.demo.e2e.framework.model.ErrorResponse;
 import com.example.demo.e2e.framework.service.auth.AuthService;
+import com.example.demo.e2e.framework.support.Tokens;
 
 import io.qameta.allure.Allure;
 
@@ -54,7 +55,8 @@ class AuthTest extends BaseApiTest {
         assertSoftly(softly -> {
             softly.assertThat(registered.statusCode()).isEqualTo(CREATED);
             softly.assertThat(registeredView.username()).isEqualTo(username);
-            softly.assertThat(registeredView.token()).isNotBlank();
+            softly.assertThat(Tokens.claims(registeredView.token()).sub()).isEqualTo(username);
+            softly.assertThat(Tokens.claims(registeredView.token()).iss()).isEqualTo(Tokens.AUTH_SERVICE_ISSUER);
         });
 
         Allure.step("The new user can then log in with those credentials");
@@ -63,7 +65,8 @@ class AuthTest extends BaseApiTest {
         assertSoftly(softly -> {
             softly.assertThat(loggedIn.statusCode()).isEqualTo(OK);
             softly.assertThat(loggedInView.username()).isEqualTo(username);
-            softly.assertThat(loggedInView.token()).isNotBlank();
+            softly.assertThat(Tokens.claims(loggedInView.token()).sub()).isEqualTo(username);
+            softly.assertThat(Tokens.claims(loggedInView.token()).iss()).isEqualTo(Tokens.AUTH_SERVICE_ISSUER);
         });
     }
 
@@ -77,7 +80,8 @@ class AuthTest extends BaseApiTest {
         assertSoftly(softly -> {
             softly.assertThat(firstRegistration.statusCode()).isEqualTo(CREATED);
             softly.assertThat(firstRegistrationView.username()).isEqualTo(username);
-            softly.assertThat(firstRegistrationView.token()).isNotBlank();
+            softly.assertThat(Tokens.claims(firstRegistrationView.token()).sub()).isEqualTo(username);
+            softly.assertThat(Tokens.claims(firstRegistrationView.token()).iss()).isEqualTo(Tokens.AUTH_SERVICE_ISSUER);
         });
 
         // Expected for this demo app: registration explicitly reveals that the username is already

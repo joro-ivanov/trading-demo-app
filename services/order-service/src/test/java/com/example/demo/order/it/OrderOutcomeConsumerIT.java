@@ -9,7 +9,8 @@ import org.springframework.http.HttpStatus;
 import com.example.demo.order.domain.OrderStatus;
 import com.example.demo.order.domain.Side;
 import com.example.demo.order.it.harness.OrderITBase;
-import com.example.demo.order.it.harness.OrderJson;
+import com.example.demo.order.it.harness.OrderRequest;
+import com.example.demo.order.it.harness.Orders;
 import com.example.demo.order.it.harness.OrderMessages;
 
 /**
@@ -24,7 +25,7 @@ class OrderOutcomeConsumerIT extends OrderITBase {
     /** Far below any market price, so the matcher rests the order (PENDING). */
     private static final String NON_MARKETABLE_LIMIT = "0.01";
 
-    private static final String BUY_ORDER = OrderJson.market(SYMBOL, Side.BUY.name(), QUANTITY);
+    private static final OrderRequest BUY_ORDER = Orders.market(SYMBOL, Side.BUY.name(), QUANTITY);
 
     @Test
     void orderBecomesFilledWhenAFillArrives() {
@@ -41,7 +42,7 @@ class OrderOutcomeConsumerIT extends OrderITBase {
     // A resting event (the matcher found it non-marketable) resolves the order to PENDING.
     @Test
     void orderBecomesPendingWhenARestingEventArrives() {
-        String id = place(TESTER, OrderJson.limit(SYMBOL, Side.BUY.name(), QUANTITY, NON_MARKETABLE_LIMIT)).id();
+        String id = place(TESTER, Orders.limit(SYMBOL, Side.BUY.name(), QUANTITY, NON_MARKETABLE_LIMIT)).id();
         assertThat(statusOf(id)).isEqualTo(OrderStatus.SUBMITTED);
 
         KAFKA_PROBE.send(OrderMessages.RESTING, id, OrderMessages.resting(id));

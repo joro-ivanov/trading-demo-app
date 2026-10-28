@@ -24,6 +24,7 @@ import com.example.demo.e2e.framework.pages.OrderTicketPage;
 import com.example.demo.e2e.framework.service.marketdata.MarketDataService;
 import com.example.demo.e2e.framework.service.order.OrdersService;
 import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
+import com.example.demo.e2e.framework.support.Lookup;
 import com.example.demo.e2e.framework.support.OrderFactory;
 import com.example.demo.e2e.harness.PlaywrightLifecycle;
 import com.example.demo.e2e.harness.RequireRunningBackend;
@@ -237,10 +238,7 @@ class TradingTest extends BaseUiTest {
     }
 
     private BigDecimal googQuantity() {
-        return PortfolioService.positions(token).asList(Position.class).stream()
-                .filter(position -> position.symbol().equals(TradingSymbols.GOOG))
-                .map(Position::quantity)
-                .findFirst().orElse(BigDecimal.ZERO);
+        return Lookup.heldQuantity(PortfolioService.positions(token).asList(Position.class), TradingSymbols.GOOG);
     }
 
     private static Stream<Arguments> pendingTypedOrders() {
@@ -250,9 +248,6 @@ class TradingTest extends BaseUiTest {
     }
 
     private Position position(String symbol) {
-        return PortfolioService.positions(token).asList(Position.class).stream()
-                .filter(position -> position.symbol().equals(symbol))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("No position for " + symbol));
+        return Lookup.position(PortfolioService.positions(token).asList(Position.class), symbol);
     }
 }

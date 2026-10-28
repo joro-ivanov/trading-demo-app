@@ -1,7 +1,6 @@
 package com.example.demo.marketdata.it;
 
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.FEED_SYMBOL;
-import static com.example.demo.marketdata.it.harness.MarketDataFixtures.SYMBOL_FIELD;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -10,7 +9,6 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import com.example.demo.common.json.Json;
 import com.example.demo.marketdata.events.PriceTickPublisher;
 import com.example.demo.marketdata.it.harness.MarketDataITBase;
 import com.example.demo.marketdata.it.harness.stubs.ExchangeFeedStubs;
@@ -28,9 +26,9 @@ class ExchangeFeedIT extends MarketDataITBase {
 
     @Test
     void republishesEveryFeedFrameToPriceTicksInOrder() {
-        List<String> values = kafka().awaitValuesWhere(PriceTickPublisher.TOPIC, SYMBOL_FIELD, FEED_SYMBOL, FEED_FRAMES, WAIT);
+        List<PriceTick> ticks = kafka().awaitRecordsWhere(PriceTickPublisher.TOPIC, PriceTick.class, PriceTick::symbol,
+                FEED_SYMBOL, FEED_FRAMES, WAIT);
 
-        List<PriceTick> ticks = values.stream().map(value -> Json.read(value, PriceTick.class)).toList();
         assertThat(ticks)
                 .extracting(PriceTick::symbol, tick -> tick.price().toPlainString())
                 .containsExactly(
