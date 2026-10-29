@@ -6,10 +6,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.example.demo.common.json.Json;
 import com.example.demo.e2e.framework.config.Config;
 import com.example.demo.e2e.framework.http.ApiRequest;
 import com.example.demo.e2e.framework.http.ApiResponse;
-import com.example.demo.e2e.framework.http.Json;
 import com.example.demo.e2e.framework.http.RawBody;
 import com.example.demo.e2e.framework.logging.TestLog;
 
@@ -64,7 +64,14 @@ public abstract class BaseService {
             spec.header("Authorization", "Bearer " + request.token());
         }
         if (request.body() != null) {
-            spec.contentType("application/json").body(payload(request.body()));
+            spec.contentType("application/json");
+            if (request.body() instanceof RawBody raw) {
+                // Verbatim: only a @RawJsonPayload test can create a RawBody (ApiRequest.Builder.rawBody).
+                spec.body(raw.json().getBytes(StandardCharsets.UTF_8));
+            } else {
+                // A DTO: REST-Assured serializes it to JSON itself.
+                spec.body(request.body());
+            }
         }
 
         long start = System.nanoTime();
@@ -83,7 +90,7 @@ public abstract class BaseService {
                 durationMs);
     }
 
-    /** A {@link RawBody} is sent verbatim; any other body is a DTO serialized to JSON. */
+    /** The body as logged: a {@link RawBody} verbatim, any other body the DTO serialized to JSON. */
     private static String payload(Object body) {
         if (body instanceof RawBody raw) {
             return raw.json();

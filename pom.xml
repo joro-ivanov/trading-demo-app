@@ -15,21 +15,14 @@
         See docs/DESIGN.md.
     </description>
 
-    <!--
-      Reactor modules. Services / integration-tests / archunit-tests are added in later
-      milestones (see docs/DESIGN.md §15). M1 scaffolds the reactor + the e2e framework.
-    -->
+    <!-- Reactor modules: shared test rules and plumbing first, then common, the services (services/pom.xml), the
+         WebSocket spike, the cross-service flagship and the e2e suites. -->
     <modules>
+        <module>testing/test-rules</module>
+        <module>testing/test-support</module>
         <module>common</module>
         <module>wiremock-ws-spike</module>
-        <module>services/auth-service</module>
-        <module>services/order-service</module>
-        <module>services/market-data-service</module>
-        <module>services/portfolio-service</module>
-        <module>services/notification-service</module>
-        <module>services/alert-service</module>
-        <module>services/watchlist-service</module>
-        <module>services/risk-service</module>
+        <module>services</module>
         <module>integration-tests</module>
         <module>e2e-tests</module>
     </modules>
@@ -60,6 +53,7 @@
         <maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
         <jacoco-maven-plugin.version>0.8.14</jacoco-maven-plugin.version>
+        <allure-maven.version>2.15.2</allure-maven.version>
     </properties>
 
     <dependencyManagement>
@@ -121,8 +115,9 @@
 
     <build>
         <plugins>
-            <!-- Control-flow ban in test sources across all modules (docs/DESIGN.md §13.2) — the
-                 statement-level rule ArchUnit cannot express. PMD 7.25 to parse Java 25. -->
+            <!-- Test-source rules for every module (docs/DESIGN.md §13.2): the statement-level rules ArchUnit cannot
+                 express (no control flow, no magic values, no raw JSON). Modules add rulesets with
+                 combine.children="append" (services/pom.xml, common). PMD 7.25 to parse Java 25. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-pmd-plugin</artifactId>
@@ -223,6 +218,12 @@
         </plugins>
         <pluginManagement>
             <plugins>
+                <!-- HTML report of the e2e suites (e2e-tests: `mvn -pl e2e-tests allure:report`). -->
+                <plugin>
+                    <groupId>io.qameta.allure</groupId>
+                    <artifactId>allure-maven</artifactId>
+                    <version>${allure-maven.version}</version>
+                </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>

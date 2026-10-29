@@ -56,6 +56,13 @@ Key design rules:
 - UI tests use page objects, not raw Playwright calls in test bodies
 - API assertions deserialize into DTOs instead of asserting maps or string fragments
 - Playwright, REST-Assured, and STOMP client usage are confined to the framework layer
+- API test classes extend `BaseApiTest` (`@Tag("api")` + `RequireRunningBackend` + the per-test HTTP log, `TestLogArtifacts`); UI test
+  classes extend `BaseUiTest` (`@Tag("ui")` + `RequireRunningBackend` + `PlaywrightLifecycle`). Shared trading
+  constants and `position(symbol)` live in `BaseTest`; `harness/Reachability` is the backend probe
+- JSON goes through `common.json.Json` (no e2e-specific facade)
+- the same test rules as every other module (linear tests, exact values, no magic values, DTOs only,
+  no sleeps), owned by `.claude/skills/it-gen/conventions.md`; `E2eArchitectureTest` includes the shared
+  `TestAssertionRules` next to its own framework rules
 
 ## Prerequisites
 
@@ -76,6 +83,8 @@ Typical defaults:
 - `auth.base.url=http://localhost:8082`
 - `portfolio.base.url=http://localhost:8083`
 - `ui.base.url=http://localhost:8088`
+- `auth.username` / `auth.password`: the demo login (`demo` / `password`, matching the auth seed)
+- `jwt.secret`: the services' shared HS256 secret, for tests that mint tokens (env `JWT_SECRET`)
 
 ## Recommended Workflow
 

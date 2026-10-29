@@ -7,7 +7,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.springframework.messaging.simp.stomp.StompSession;
 
-import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.common.json.Json;
+
 
 /**
  * Stateful handle returned by the WebSocket service objects. Captures received frames into a

@@ -1,8 +1,9 @@
 package com.example.demo.marketdata.it;
 
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.FEED_SYMBOL;
-import static com.example.demo.marketdata.it.harness.MarketDataFixtures.TEST_SUBJECT;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.pricePath;
+import static com.example.demo.testing.support.auth.TestJwt.token;
+import static com.example.demo.testing.support.fixtures.TestUsers.TESTER;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ class PriceIT extends MarketDataITBase {
     void servesTheLatestFeedPrice() {
         awaitCachedPrice(FEED_SYMBOL, ExchangeFeedStubs.AAPL_LAST_PRICE);
 
-        String body = api(validToken(TEST_SUBJECT))
+        String body = api(token(TESTER))
                 .get(pricePath(FEED_SYMBOL))
                 .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
@@ -36,7 +37,7 @@ class PriceIT extends MarketDataITBase {
 
     @Test
     void unknownSymbolPriceReturns404() {
-        api(validToken(TEST_SUBJECT))
+        api(token(TESTER))
                 .get(pricePath(UNKNOWN_SYMBOL))
                 .then().statusCode(HttpStatus.NOT_FOUND.value());
     }

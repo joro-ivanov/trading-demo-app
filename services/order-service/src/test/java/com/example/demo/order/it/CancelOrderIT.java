@@ -1,5 +1,9 @@
 package com.example.demo.order.it;
 
+import static com.example.demo.testing.support.fixtures.TestTimeouts.EVENT_TIMEOUT;
+import static com.example.demo.testing.support.fixtures.TestUsers.TESTER;
+import static com.example.demo.testing.support.fixtures.Topics.FILLS;
+import static com.example.demo.testing.support.fixtures.Topics.ORDERS_RESTING;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
@@ -33,9 +37,9 @@ class CancelOrderIT extends OrderITBase {
 
     @Test
     void cancelLiveOrderTransitionsToCancelled() {
-        String id = place(TESTER, BUY_ORDER).id();
+        String id = place(TESTER_TOKEN, BUY_ORDER).id();
 
-        String body = api(TESTER).delete(ORDER_PATH, id)
+        String body = api(TESTER_TOKEN).delete(ORDER_PATH, id)
                 .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
@@ -49,10 +53,10 @@ class CancelOrderIT extends OrderITBase {
 
     @Test
     void cancelIsIdempotentOnAnAlreadyCancelledOrder() {
-        String id = place(TESTER, BUY_ORDER).id();
-        api(TESTER).delete(ORDER_PATH, id).then().statusCode(HttpStatus.OK.value());
+        String id = place(TESTER_TOKEN, BUY_ORDER).id();
+        api(TESTER_TOKEN).delete(ORDER_PATH, id).then().statusCode(HttpStatus.OK.value());
 
-        String body = api(TESTER).delete(ORDER_PATH, id)
+        String body = api(TESTER_TOKEN).delete(ORDER_PATH, id)
                 .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
@@ -64,7 +68,7 @@ class CancelOrderIT extends OrderITBase {
 
     @Test
     void cancelUnknownOrderReturns404() {
-        String body = api(TESTER).delete(ORDER_PATH, UNKNOWN_ID)
+        String body = api(TESTER_TOKEN).delete(ORDER_PATH, UNKNOWN_ID)
                 .then().statusCode(HttpStatus.NOT_FOUND.value())
                 .extract().asString();
 
@@ -74,12 +78,12 @@ class CancelOrderIT extends OrderITBase {
     // Bob cannot cancel Alice's order — 404 (same as unknown, so existence is not leaked); Alice still can.
     @Test
     void cannotCancelAnotherUsersOrder() {
-        String aliceOrderId = place(ALICE, BUY_ORDER).id();
+        String aliceOrderId = place(ALICE_TOKEN, BUY_ORDER).id();
 
-        api(BOB).delete(ORDER_PATH, aliceOrderId).then().statusCode(HttpStatus.NOT_FOUND.value());
+        api(BOB_TOKEN).delete(ORDER_PATH, aliceOrderId).then().statusCode(HttpStatus.NOT_FOUND.value());
         assertThat(statusOf(aliceOrderId)).isEqualTo(OrderStatus.SUBMITTED);
 
-        String body = api(ALICE).delete(ORDER_PATH, aliceOrderId)
+        String body = api(ALICE_TOKEN).delete(ORDER_PATH, aliceOrderId)
                 .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
         assertThat(Json.read(body, OrderResponse.class).status()).isEqualTo(OrderStatus.CANCELLED.name());
@@ -87,12 +91,12 @@ class CancelOrderIT extends OrderITBase {
 
     @Test
     void aPendingOrderCanBeCancelled() {
-        String id = place(TESTER, Orders.limit(SYMBOL, Side.BUY.name(), QUANTITY, NON_MARKETABLE_LIMIT)).id();
-        KAFKA_PROBE.send(OrderMessages.RESTING, id, OrderMessages.resting(id));
+        String id = place(TESTER_TOKEN, Orders.limit(SYMBOL, Side.BUY.name(), QUANTITY, NON_MARKETABLE_LIMIT)).id();
+        KAFKA_PROBE.send(ORDERS_RESTING, id, OrderMessages.resting(id));
         await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(statusOf(id)).isEqualTo(OrderStatus.PENDING));
 
-        String body = api(TESTER).delete(ORDER_PATH, id)
+        String body = api(TESTER_TOKEN).delete(ORDER_PATH, id)
                 .then().statusCode(HttpStatus.OK.value())
                 .extract().asString();
 
@@ -105,13 +109,13 @@ class CancelOrderIT extends OrderITBase {
     // Filled orders are terminal: cancelling after execution must not rewrite history.
     @Test
     void cancellingAFilledOrderIsRejected() {
-        String id = place(TESTER, BUY_ORDER).id();
-        KAFKA_PROBE.send(OrderMessages.FILLS, id,
-                OrderMessages.fill(id, SYMBOL, Side.BUY.name(), QUANTITY, FILL_PRICE, TESTER_NAME));
+        String id = place(TESTER_TOKEN, BUY_ORDER).id();
+        KAFKA_PROBE.send(FILLS, id,
+                OrderMessages.fill(id, SYMBOL, Side.BUY.name(), QUANTITY, FILL_PRICE, TESTER));
         await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(statusOf(id)).isEqualTo(OrderStatus.FILLED));
 
-        String body = api(TESTER).delete(ORDER_PATH, id)
+        String body = api(TESTER_TOKEN).delete(ORDER_PATH, id)
                 .then().statusCode(HttpStatus.CONFLICT.value())
                 .extract().asString();
 

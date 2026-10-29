@@ -1,14 +1,10 @@
 package com.example.demo.e2e.ui;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import com.example.demo.e2e.framework.model.Side;
 import com.example.demo.e2e.framework.model.TradingSymbols;
 import com.example.demo.e2e.framework.pages.DashboardPage;
-import com.example.demo.e2e.harness.PlaywrightLifecycle;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
 
 import io.qameta.allure.Allure;
@@ -18,9 +14,6 @@ import io.qameta.allure.Allure;
  * and switching users in one browser (no stale portfolio state). The ticker is not market-hours
  * gated (the demo feed runs continuously); the order-placing flows are.
  */
-@Tag("ui")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(PlaywrightLifecycle.class)
 class LiveDashboardTest extends BaseUiTest {
 
     @Test

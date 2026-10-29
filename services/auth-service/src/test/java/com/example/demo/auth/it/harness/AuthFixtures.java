@@ -22,9 +22,6 @@ public final class AuthFixtures {
     /** {@code security.jwt.ttl-seconds} default (application.yaml). */
     public static final long TOKEN_TTL_SECONDS = 3600;
 
-    /** Subject of the tokens tests use when the caller's identity does not matter. */
-    public static final String TEST_SUBJECT = "tester";
-
     private static final String EMAIL_DOMAIN = "@demo.example.com";
 
     private AuthFixtures() {

@@ -1,9 +1,9 @@
 package com.example.demo.notification.it;
 
-import static com.example.demo.notification.it.harness.NotificationFixtures.ALICE;
-import static com.example.demo.notification.it.harness.NotificationFixtures.BOB;
-import static com.example.demo.notification.it.harness.NotificationFixtures.PRICE_TICKS;
-import static com.example.demo.notification.it.harness.NotificationFixtures.TESTER;
+import static com.example.demo.testing.support.fixtures.TestUsers.ALICE;
+import static com.example.demo.testing.support.fixtures.TestUsers.BOB;
+import static com.example.demo.testing.support.fixtures.Topics.PRICE_TICKS;
+import static com.example.demo.testing.support.fixtures.TestUsers.TESTER;
 import static com.example.demo.notification.it.harness.NotificationFixtures.priceTick;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
@@ -14,9 +14,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.stomp.StompSession;
 
 import com.example.demo.notification.it.harness.NotificationITBase;
-import com.example.demo.notification.it.harness.PriceTick;
-import com.example.demo.notification.it.harness.RawJsonPayload;
-import com.example.demo.notification.it.harness.StompProbe.Frames;
+import com.example.demo.testing.support.contracts.PriceTick;
+import com.example.demo.testing.RawJsonPayload;
+import com.example.demo.testing.support.stomp.StompFrames;
 
 /**
  * Kafka {@code price.ticks} → STOMP {@code /topic/prices.<symbol>} broadcast. The payload is
@@ -36,7 +36,7 @@ class PriceTickPushIT extends NotificationITBase {
     @Test
     void deliversKafkaPriceTickToSubscribedStompClient() throws Exception {
         StompSession session = stomp.connect(TESTER);
-        Frames<PriceTick> frames = stomp.subscribeToPrices(session, SINGLE_SUBSCRIBER_SYMBOL);
+        StompFrames<PriceTick> frames = stomp.subscribeToPrices(session, SINGLE_SUBSCRIBER_SYMBOL);
         PriceTick tick = priceTick(SINGLE_SUBSCRIBER_SYMBOL, SINGLE_SUBSCRIBER_PRICE);
 
         produce(PRICE_TICKS, SINGLE_SUBSCRIBER_SYMBOL, tick);
@@ -49,7 +49,7 @@ class PriceTickPushIT extends NotificationITBase {
     @Test
     @RawJsonPayload(reason = "byte-for-byte forwarding: only the raw frame text can show the payload was not re-serialized")
     void forwardsThePriceTickPayloadByteForByte() throws Exception {
-        Frames<PriceTick> frames = stomp.subscribeToPrices(stomp.connect(TESTER), VERBATIM_SYMBOL);
+        StompFrames<PriceTick> frames = stomp.subscribeToPrices(stomp.connect(TESTER), VERBATIM_SYMBOL);
         String unnormalisedTick = "{ \"price\" : 512.30,  \"symbol\" : \"" + VERBATIM_SYMBOL + "\" }";
 
         produceRaw(PRICE_TICKS, VERBATIM_SYMBOL, unnormalisedTick);
@@ -60,8 +60,8 @@ class PriceTickPushIT extends NotificationITBase {
     // One tick is broadcast to every subscriber of the symbol topic.
     @Test
     void fansOutOnePriceTickToMultipleSubscribers() throws Exception {
-        Frames<PriceTick> framesA = stomp.subscribeToPrices(stomp.connect(ALICE), FAN_OUT_SYMBOL);
-        Frames<PriceTick> framesB = stomp.subscribeToPrices(stomp.connect(BOB), FAN_OUT_SYMBOL);
+        StompFrames<PriceTick> framesA = stomp.subscribeToPrices(stomp.connect(ALICE), FAN_OUT_SYMBOL);
+        StompFrames<PriceTick> framesB = stomp.subscribeToPrices(stomp.connect(BOB), FAN_OUT_SYMBOL);
         PriceTick tick = priceTick(FAN_OUT_SYMBOL, FAN_OUT_PRICE);
 
         produce(PRICE_TICKS, FAN_OUT_SYMBOL, tick);
@@ -79,7 +79,7 @@ class PriceTickPushIT extends NotificationITBase {
     @Test
     @RawJsonPayload(reason = "a syntactically broken price tick (not JSON at all), which no PriceTick record can serialize to")
     void aMalformedPriceTickDoesNotStallTheGateway() throws Exception {
-        Frames<PriceTick> frames = stomp.subscribeToPrices(stomp.connect(TESTER), POISONED_SYMBOL);
+        StompFrames<PriceTick> frames = stomp.subscribeToPrices(stomp.connect(TESTER), POISONED_SYMBOL);
         PriceTick goodTick = priceTick(POISONED_SYMBOL, PRICE_AFTER_POISON);
 
         produceRaw(PRICE_TICKS, POISONED_SYMBOL, MALFORMED_TICK);

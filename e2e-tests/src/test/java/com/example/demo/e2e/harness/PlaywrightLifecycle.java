@@ -2,8 +2,6 @@ package com.example.demo.e2e.harness;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -46,7 +44,7 @@ public final class PlaywrightLifecycle implements BeforeAllCallback, BeforeEachC
     @Override
     public void beforeAll(ExtensionContext context) {
         String url = Config.get().get("ui.base.url");
-        Assumptions.assumeTrue(reachable(url), "UI stack not reachable at " + url + " — run: docker compose up");
+        Assumptions.assumeTrue(Reachability.getsOk(url), "UI stack not reachable at " + url + " — run: docker compose up");
         PlaywrightManager.startClass(classKey(context));
     }
 
@@ -104,19 +102,6 @@ public final class PlaywrightLifecycle implements BeforeAllCallback, BeforeEachC
     @Override
     public void afterAll(ExtensionContext context) {
         PlaywrightManager.stopClass(classKey(context));
-    }
-
-    private static boolean reachable(String url) {
-        try {
-            HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
-            connection.setConnectTimeout(1500);
-            connection.setReadTimeout(1500);
-            int status = connection.getResponseCode();
-            connection.disconnect();
-            return status == 200;
-        } catch (IOException e) {
-            return false;
-        }
     }
 
     private static void attach(String name, String type, Path path) {

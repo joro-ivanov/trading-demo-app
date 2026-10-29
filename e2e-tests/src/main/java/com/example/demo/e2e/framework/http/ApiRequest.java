@@ -3,7 +3,7 @@ package com.example.demo.e2e.framework.http;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import com.example.demo.e2e.framework.support.RawJsonPayload;
+import com.example.demo.testing.RawJsonPayload;
 
 /**
  * Immutable description of an HTTP request, built fluently via {@link #builder()}.

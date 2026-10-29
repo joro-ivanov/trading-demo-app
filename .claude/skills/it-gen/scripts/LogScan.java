@@ -29,7 +29,7 @@ import java.util.stream.Stream;
  * test class. Nothing is filtered out as "noise": deciding whether a finding is expected is a
  * judgement for the reviewer, not for this script. Prints JSON.
  *
- * Container logs ({@code target/container-logs/<name>.log}, written by Testcontainers' Slf4jLogConsumer) are
+ * Container logs ({@code target/container-logs/<name>.log}, written by test-support's ContainerLogs) are
  * read in their native formats: Postgres ({@code ERROR/FATAL/PANIC/WARNING}, with DETAIL/STATEMENT/HINT),
  * Kafka log4j ({@code [ts] LEVEL msg (logger)}) and Redis ({@code #} = warning). A request that ended in an
  * unhandled exception is flagged {@code unhandledHttp500: true}: the service answered 500, which is a bug.
@@ -49,7 +49,7 @@ public class LogScan {
                     + "((?:[a-z_$][\\w$]*\\.)+[A-Z][\\w$]*(?:Exception|Error|Throwable|Failure))(?::\\s*(.*))?$");
     private static final Pattern FRAME_LINE = Pattern.compile("^\\s+at ([\\w$.<>]+)\\(([^)]*)\\)");
     private static final Pattern MAVEN_LINE = Pattern.compile("^\\[(INFO|WARNING|ERROR|DEBUG)]");
-    // Container logs (Testcontainers Slf4jLogConsumer writes "STDOUT: <line>" / "STDERR: <line>").
+    // Container logs (test-support ContainerLogs, like Testcontainers' Slf4jLogConsumer, writes "STDOUT: <line>" / "STDERR: <line>").
     private static final Pattern CONSUMER_PREFIX = Pattern.compile("^(STDOUT|STDERR): ?");
     private static final Pattern POSTGRES_LINE = Pattern.compile(
             "^\\d{4}-\\d{2}-\\d{2} [\\d:.]+ \\S+ \\[\\d+] (PANIC|FATAL|ERROR|WARNING|LOG|INFO|NOTICE|DEBUG\\d?)"

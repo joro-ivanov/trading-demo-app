@@ -12,8 +12,11 @@ import org.junit.jupiter.api.BeforeEach;
 import com.example.demo.e2e.framework.config.Config;
 import com.example.demo.e2e.framework.http.ApiResponse;
 import com.example.demo.e2e.framework.model.Login;
+import com.example.demo.e2e.framework.model.Position;
 import com.example.demo.e2e.framework.service.auth.AuthService;
 import com.example.demo.e2e.framework.service.funds.FundsService;
+import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
+import com.example.demo.e2e.framework.support.Lookup;
 import com.example.demo.e2e.framework.support.Tokens;
 import com.example.demo.e2e.framework.ui.PlaywrightManager;
 
@@ -37,6 +40,17 @@ public abstract class BaseTest {
             .getDuration("e2e.ws.frame-timeout", Duration.ofSeconds(10));
     protected static final Duration SHORT_WS_FRAME_TIMEOUT = Config.get()
             .getDuration("e2e.ws.frame.short-timeout", Duration.ofSeconds(8));
+    /** Quantity of the main order in most trading scenarios (API and dashboard). */
+    protected static final int ORDER_QUANTITY = 10;
+    protected static final BigDecimal ORDER_SIZE = BigDecimal.valueOf(ORDER_QUANTITY);
+    /** Position bought first so that a later SELL passes the short-sell guard. */
+    protected static final BigDecimal SEEDED_POSITION = new BigDecimal("20");
+    /** Below any market price: a SELL limit or BUY stop at it is marketable, a BUY limit at it rests. */
+    protected static final BigDecimal BELOW_MARKET_PRICE = new BigDecimal("0.01");
+    /** 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits. */
+    protected static final BigDecimal UNREACHABLE_STOP_PRICE = new BigDecimal("1000");
+    /** Fills of a scenario that buys and then sells once. */
+    protected static final int BUY_AND_SELL_FILLS = 2;
     private static final String UUID_SEPARATOR = "-";
     private static final int USERNAME_SUFFIX_LENGTH = 10;
     private static final String EMAIL_AT = "@";
@@ -78,5 +92,10 @@ public abstract class BaseTest {
 
     protected String registerFreshUserToken(String prefix) {
         return registerFreshUser(prefix).token();
+    }
+
+    /** The primary user's position in {@code symbol} (fails if there is none). */
+    protected Position position(String symbol) {
+        return Lookup.position(PortfolioService.positions(token).asList(Position.class), symbol);
     }
 }

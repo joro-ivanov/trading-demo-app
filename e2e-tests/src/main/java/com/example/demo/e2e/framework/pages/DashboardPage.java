@@ -9,7 +9,7 @@ import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.AriaRole;
 
-import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.common.json.Json;
 import com.example.demo.e2e.framework.model.Login;
 import com.example.demo.e2e.framework.model.OrderType;
 import com.example.demo.e2e.framework.model.Side;

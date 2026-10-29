@@ -1,10 +1,10 @@
 package com.example.demo.marketdata.it;
 
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.FEED_SYMBOL;
+import static com.example.demo.testing.support.fixtures.TestTimeouts.EVENT_TIMEOUT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-import java.time.Duration;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -20,14 +20,13 @@ import com.example.demo.marketdata.model.PriceTick;
  */
 class ExchangeFeedIT extends MarketDataITBase {
 
-    private static final Duration WAIT = Duration.ofSeconds(20);
     /** The feed stub sends a burst of two AAPL frames on subscribe. */
     private static final int FEED_FRAMES = 2;
 
     @Test
     void republishesEveryFeedFrameToPriceTicksInOrder() {
         List<PriceTick> ticks = kafka().awaitRecordsWhere(PriceTickPublisher.TOPIC, PriceTick.class, PriceTick::symbol,
-                FEED_SYMBOL, FEED_FRAMES, WAIT);
+                FEED_SYMBOL, FEED_FRAMES, EVENT_TIMEOUT);
 
         assertThat(ticks)
                 .extracting(PriceTick::symbol, tick -> tick.price().toPlainString())

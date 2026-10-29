@@ -1,5 +1,8 @@
 package com.example.demo.portfolio.it;
 
+import static com.example.demo.testing.support.auth.TestJwt.token;
+import static com.example.demo.testing.support.fixtures.TestTimeouts.EVENT_TIMEOUT;
+import static com.example.demo.testing.support.fixtures.TestUsers.TESTER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
@@ -16,7 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.example.demo.portfolio.domain.FillEntity;
 import com.example.demo.portfolio.domain.FillRepository;
 import com.example.demo.portfolio.domain.PositionRepository;
-import com.example.demo.portfolio.it.harness.KafkaProbe;
+import com.example.demo.portfolio.it.harness.PortfolioEvents;
 import com.example.demo.portfolio.it.harness.PortfolioITBase;
 import com.example.demo.portfolio.web.PositionResponse;
 
@@ -81,13 +84,13 @@ class FillsListenerIT extends PortfolioITBase {
         "FLIP,15,50,-5"
     })
     void sellKeepsTheAveragePrice(String symbol, String sellQuantity, String sellPrice, BigDecimal expectedQuantity) {
-        KAFKA_PROBE.sendFill(TESTER, symbol, BUY, LONG_QUANTITY, LONG_AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, symbol, BUY, LONG_QUANTITY, LONG_AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(symbol).quantity()).isEqualByComparingTo(LONG_QUANTITY));
 
-        KAFKA_PROBE.sendFill(TESTER, symbol, SELL, sellQuantity, sellPrice);
+        EVENTS.sendFill(TESTER, symbol, SELL, sellQuantity, sellPrice);
 
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             PositionResponse position = position(symbol);
             assertSoftly(softly -> {
                 softly.assertThat(position.quantity()).isEqualByComparingTo(expectedQuantity);
@@ -98,13 +101,13 @@ class FillsListenerIT extends PortfolioITBase {
 
     @Test
     void weightedAveragePriceAcrossBuysWithRounding() {
-        KAFKA_PROBE.sendFill(TESTER, WEIGHTED_SYMBOL, BUY, LONG_QUANTITY, LONG_AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, WEIGHTED_SYMBOL, BUY, LONG_QUANTITY, LONG_AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(WEIGHTED_SYMBOL).quantity()).isEqualByComparingTo(LONG_QUANTITY));
 
-        KAFKA_PROBE.sendFill(TESTER, WEIGHTED_SYMBOL, BUY, SECOND_BUY_QUANTITY, SECOND_BUY_PRICE);
+        EVENTS.sendFill(TESTER, WEIGHTED_SYMBOL, BUY, SECOND_BUY_QUANTITY, SECOND_BUY_PRICE);
 
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             PositionResponse position = position(WEIGHTED_SYMBOL);
             assertSoftly(softly -> {
                 softly.assertThat(position.quantity()).isEqualByComparingTo(WEIGHTED_QUANTITY);
@@ -119,17 +122,17 @@ class FillsListenerIT extends PortfolioITBase {
     void sellToFlatThenRebuyResetsTheAverage() {
         // A dedicated owner, so the book holds exactly this test's positions.
         String token = token(REBUY_OWNER);
-        KAFKA_PROBE.sendFill(REBUY_OWNER, REBUY_SYMBOL, BUY, LONG_QUANTITY, LONG_AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(REBUY_OWNER, REBUY_SYMBOL, BUY, LONG_QUANTITY, LONG_AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(token, REBUY_SYMBOL).quantity()).isEqualByComparingTo(LONG_QUANTITY));
 
-        KAFKA_PROBE.sendFill(REBUY_OWNER, REBUY_SYMBOL, SELL, LONG_QUANTITY, FLATTENING_SELL_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(REBUY_OWNER, REBUY_SYMBOL, SELL, LONG_QUANTITY, FLATTENING_SELL_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(positions(token)).isEmpty());
 
-        KAFKA_PROBE.sendFill(REBUY_OWNER, REBUY_SYMBOL, BUY, REBUY_QUANTITY, REBUY_PRICE);
+        EVENTS.sendFill(REBUY_OWNER, REBUY_SYMBOL, BUY, REBUY_QUANTITY, REBUY_PRICE);
 
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             PositionResponse position = position(token, REBUY_SYMBOL);
             assertSoftly(softly -> {
                 softly.assertThat(position.quantity()).isEqualByComparingTo(REBUY_QUANTITY);
@@ -140,11 +143,11 @@ class FillsListenerIT extends PortfolioITBase {
 
     @Test
     void fillsAreStoredInTheDatabase() {
-        KAFKA_PROBE.sendFill(STORED_OWNER, STORED_SYMBOL, BUY, STORED_QUANTITY, STORED_PRICE,
+        EVENTS.sendFill(STORED_OWNER, STORED_SYMBOL, BUY, STORED_QUANTITY, STORED_PRICE,
                 STORED_FILLED_AT.toString(), STORED_SEQUENCE);
 
-        await().atMost(WAIT).untilAsserted(() -> {
-            FillEntity fill = fillRepository.findById(KafkaProbe.orderId(STORED_SYMBOL, STORED_OWNER, BUY))
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
+            FillEntity fill = fillRepository.findById(PortfolioEvents.orderId(STORED_SYMBOL, STORED_OWNER, BUY))
                     .orElseThrow(() -> new AssertionError("recent fill was not persisted"));
             assertSoftly(softly -> {
                 softly.assertThat(fill.getOwner()).isEqualTo(STORED_OWNER);
@@ -161,9 +164,9 @@ class FillsListenerIT extends PortfolioITBase {
     @Test
     void closedPositionsAreRemovedFromTheDatabaseAndNotReturned() {
         String token = token(CLOSING_OWNER);
-        KAFKA_PROBE.sendFill(CLOSING_OWNER, CLOSING_SYMBOL, BUY, CLOSING_QUANTITY, OPEN_PRICE,
+        EVENTS.sendFill(CLOSING_OWNER, CLOSING_SYMBOL, BUY, CLOSING_QUANTITY, OPEN_PRICE,
                 OPENED_AT.toString(), CLOSING_SEQUENCE);
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             PositionResponse response = position(token, CLOSING_SYMBOL);
             assertSoftly(softly -> {
                 softly.assertThat(response.quantity()).isEqualByComparingTo(CLOSING_QUANTITY);
@@ -175,10 +178,10 @@ class FillsListenerIT extends PortfolioITBase {
             });
         });
 
-        KAFKA_PROBE.sendFill(CLOSING_OWNER, CLOSING_SYMBOL, SELL, CLOSING_QUANTITY, CLOSE_PRICE,
+        EVENTS.sendFill(CLOSING_OWNER, CLOSING_SYMBOL, SELL, CLOSING_QUANTITY, CLOSE_PRICE,
                 CLOSED_AT.toString(), CLOSING_SEQUENCE);
 
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             List<PositionResponse> positions = positions(token);
             assertSoftly(softly -> {
                 softly.assertThat(positions).isEmpty();
@@ -198,9 +201,9 @@ class FillsListenerIT extends PortfolioITBase {
         String token = token(owner);
         deposit(token, STARTING_CASH);
 
-        KAFKA_PROBE.sendFill(owner, symbol, side, quantity, price);
+        EVENTS.sendFill(owner, symbol, side, quantity, price);
 
-        await().atMost(WAIT).untilAsserted(() ->
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(balanceCash(token)).isEqualByComparingTo(expectedCash));
     }
 }

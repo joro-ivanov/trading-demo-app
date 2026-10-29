@@ -23,8 +23,8 @@ import org.testcontainers.containers.wait.strategy.WaitAllStrategy;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
+import com.example.demo.common.json.Json;
 import com.example.demo.e2e.framework.config.Config;
-import com.example.demo.e2e.framework.http.Json;
 
 /**
  * Thread-local Playwright lifecycle owner. UI test fixtures pass the current {@link Page} from here

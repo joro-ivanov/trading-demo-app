@@ -1,7 +1,6 @@
 package com.example.demo.e2e.api;
 
 import com.example.demo.common.security.Jwt;
-import com.example.demo.e2e.framework.allure.TestLogArtifacts;
 import com.example.demo.e2e.framework.http.ApiRequest;
 import com.example.demo.e2e.framework.http.ApiResponse;
 import com.example.demo.e2e.framework.http.HttpMethod;
@@ -18,9 +17,7 @@ import com.example.demo.e2e.framework.service.order.OrdersService;
 import com.example.demo.e2e.framework.support.OrderRequestBuilder;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
 import io.qameta.allure.Allure;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -45,8 +42,6 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
  * stack. Complements the existing expired-token / cross-user-read tests in {@link TradingTest}.
  * Token-bearing reads are not market-hours gated; the two tests that place real orders are.
  */
-@Tag("api")
-@ExtendWith(TestLogArtifacts.class)
 class SecurityTest extends BaseApiTest {
 
     private static final String HISTORY = "/orders/history";

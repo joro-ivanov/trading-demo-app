@@ -16,12 +16,9 @@ import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNAUTHORIZE
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-import com.example.demo.e2e.framework.allure.TestLogArtifacts;
 import com.example.demo.e2e.framework.http.ApiResponse;
 import com.example.demo.e2e.framework.model.Login;
 import com.example.demo.e2e.framework.model.ErrorResponse;
@@ -35,8 +32,6 @@ import io.qameta.allure.Allure;
  * Black-box, not market-hours gated. The exhaustive validation matrix lives in the auth-service ITs (RegisterIT/LoginIT); here we
  * prove the deployed wiring: register → login, and the representative 409 / 400 / 401 paths.
  */
-@Tag("api")
-@ExtendWith(TestLogArtifacts.class)
 class AuthTest extends BaseApiTest {
 
     /** Turns a username into a second, different email address on the same domain. */

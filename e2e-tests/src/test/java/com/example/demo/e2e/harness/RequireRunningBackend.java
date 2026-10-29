@@ -1,17 +1,10 @@
 package com.example.demo.e2e.harness;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 import com.example.demo.e2e.framework.config.Config;
-import com.example.demo.e2e.framework.http.Json;
 import com.example.demo.e2e.framework.model.LoginRequest;
 
 /**
@@ -23,32 +16,14 @@ import com.example.demo.e2e.framework.model.LoginRequest;
  */
 public final class RequireRunningBackend implements BeforeAllCallback {
 
-    private static final String PROBE_USERNAME = "demo";
-    private static final String PROBE_PASSWORD = "password";
+    /** The seeded demo user (auth V1__users.sql) the probe logs in as, from the e2e config. */
+    private static final String PROBE_USERNAME = Config.get().get("auth.username");
+    private static final String PROBE_PASSWORD = Config.get().get("auth.password");
 
     @Override
     public void beforeAll(ExtensionContext context) {
         String url = Config.get().get("auth.base.url") + "/auth/login";
-        Assumptions.assumeTrue(loginReachable(url),
+        Assumptions.assumeTrue(Reachability.postsOk(url, new LoginRequest(PROBE_USERNAME, PROBE_PASSWORD)),
                 "Backend not reachable at " + url + " — start it with: docker compose up");
-    }
-
-    private static boolean loginReachable(String url) {
-        try {
-            HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Content-Type", "application/json");
-            connection.setConnectTimeout(1500);
-            connection.setReadTimeout(1500);
-            connection.setDoOutput(true);
-            try (OutputStream out = connection.getOutputStream()) {
-                out.write(Json.write(new LoginRequest(PROBE_USERNAME, PROBE_PASSWORD)).getBytes(StandardCharsets.UTF_8));
-            }
-            int status = connection.getResponseCode();
-            connection.disconnect();
-            return status == 200;
-        } catch (IOException e) {
-            return false;
-        }
     }
 }

@@ -2,7 +2,6 @@
   "permissions": {
     "allow": [
       "Bash(java .claude/skills/it-gen/scripts/Scope.java:*)",
-      "Bash(java .claude/skills/it-gen/scripts/TestLint.java:*)",
       "Bash(mvn -pl :*)",
       "Bash(mvn -q -pl :*)",
       "Bash(git diff:*)",

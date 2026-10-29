@@ -2,16 +2,16 @@ package com.example.demo.marketdata.it;
 
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.BUY;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.FEED_SYMBOL;
-import static com.example.demo.marketdata.it.harness.MarketDataFixtures.ORDERS_SUBMITTED;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.UNCACHED_SYMBOL;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.restingEvent;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.submittedOrder;
 import static com.example.demo.marketdata.it.harness.MarketDataFixtures.submittedTypedOrder;
+import static com.example.demo.testing.support.fixtures.TestTimeouts.EVENT_TIMEOUT;
+import static com.example.demo.testing.support.fixtures.Topics.ORDERS_SUBMITTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import com.example.demo.marketdata.it.harness.MarketDataITBase;
-import com.example.demo.marketdata.it.harness.OrderRestingEvent;
+import com.example.demo.testing.support.contracts.OrderRestingEvent;
 import com.example.demo.marketdata.it.harness.stubs.ExchangeFeedStubs;
 import com.example.demo.marketdata.match.FillEvent;
 import com.example.demo.marketdata.match.OrderMatcher;
@@ -31,8 +31,6 @@ import com.example.demo.marketdata.match.OrderMatcher;
  * Every order uses its own id.
  */
 class OrderMatchingIT extends MarketDataITBase {
-
-    private static final Duration WAIT = Duration.ofSeconds(20);
 
     private static final String FULL_FILL_ORDER_ID = "ord-full";
     private static final BigDecimal FULL_FILL_QUANTITY = new BigDecimal("7");
@@ -51,7 +49,7 @@ class OrderMatchingIT extends MarketDataITBase {
                 submittedOrder(FULL_FILL_ORDER_ID, FEED_SYMBOL, BUY, FULL_FILL_QUANTITY));
 
         List<FillEvent> fills = kafka().awaitRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::orderId,
-                FULL_FILL_ORDER_ID, 1, WAIT);
+                FULL_FILL_ORDER_ID, 1, EVENT_TIMEOUT);
         assertThat(fills).hasSize(1);
         FillEvent fill = fills.getFirst();
         assertSoftly(softly -> {
@@ -82,7 +80,7 @@ class OrderMatchingIT extends MarketDataITBase {
         kafka().send(ORDERS_SUBMITTED, id,
                 submittedTypedOrder(id, FEED_SYMBOL, side, TYPED_ORDER_QUANTITY, type, limitPrice, stopPrice));
 
-        List<FillEvent> fills = kafka().awaitRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::orderId, id, 1, WAIT);
+        List<FillEvent> fills = kafka().awaitRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::orderId, id, 1, EVENT_TIMEOUT);
         assertThat(fills).hasSize(1);
         FillEvent fill = fills.getFirst();
         assertSoftly(softly -> {
@@ -107,7 +105,7 @@ class OrderMatchingIT extends MarketDataITBase {
                 submittedTypedOrder(id, FEED_SYMBOL, side, TYPED_ORDER_QUANTITY, type, limitPrice, stopPrice));
 
         assertThat(kafka().awaitRecordsWhere(OrderMatcher.RESTING_TOPIC, OrderRestingEvent.class,
-                OrderRestingEvent::orderId, id, 1, WAIT))
+                OrderRestingEvent::orderId, id, 1, EVENT_TIMEOUT))
                 .containsExactly(restingEvent(id));
         assertThat(kafka().currentRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::orderId, id)).isEmpty();
     }
@@ -121,7 +119,7 @@ class OrderMatchingIT extends MarketDataITBase {
                 TYPED_ORDER_QUANTITY, LIMIT, LIMIT_BELOW_MARKET, null));
 
         assertThat(kafka().awaitRecordsWhere(OrderMatcher.RESTING_TOPIC, OrderRestingEvent.class,
-                OrderRestingEvent::orderId, RESTING_ORDER_ID, 1, WAIT))
+                OrderRestingEvent::orderId, RESTING_ORDER_ID, 1, EVENT_TIMEOUT))
                 .containsExactly(restingEvent(RESTING_ORDER_ID));
     }
 
@@ -136,7 +134,7 @@ class OrderMatchingIT extends MarketDataITBase {
         kafka().send(ORDERS_SUBMITTED, id, submittedTypedOrder(id, UNCACHED_SYMBOL, BUY, quantity, type, limitPrice, null));
 
         assertThat(kafka().awaitRecordsWhere(OrderMatcher.RESTING_TOPIC, OrderRestingEvent.class,
-                OrderRestingEvent::orderId, id, 1, WAIT))
+                OrderRestingEvent::orderId, id, 1, EVENT_TIMEOUT))
                 .containsExactly(restingEvent(id));
         assertThat(kafka().currentRecordsWhere(OrderMatcher.FILLS_TOPIC, FillEvent.class, FillEvent::symbol,
                 UNCACHED_SYMBOL)).isEmpty();

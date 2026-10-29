@@ -1,5 +1,6 @@
 package com.example.demo.order.it;
 
+import static com.example.demo.testing.support.auth.TestJwt.token;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
@@ -33,7 +34,7 @@ class OrderHistoryIT extends OrderITBase {
 
     @Test
     void orderHistoryIncludesAPlacedOrder() {
-        String token = tokenFor(SINGLE_OWNER);
+        String token = token(SINGLE_OWNER);
         OrderResponse placed = place(token, Orders.market(ALICE_SYMBOL, Side.BUY.name(), SINGLE_QUANTITY));
 
         String body = api(token).get(HISTORY_PATH)
@@ -50,8 +51,8 @@ class OrderHistoryIT extends OrderITBase {
 
     @Test
     void orderHistoryIsScopedToTheAuthenticatedUser() {
-        String alice = tokenFor(ALICE_OWNER);
-        String bob = tokenFor(BOB_OWNER);
+        String alice = token(ALICE_OWNER);
+        String bob = token(BOB_OWNER);
         OrderResponse aliceOrder = place(alice, Orders.market(ALICE_SYMBOL, Side.BUY.name(), ALICE_QUANTITY));
         OrderResponse bobOrder = place(bob, Orders.market(BOB_SYMBOL, Side.BUY.name(), BOB_QUANTITY));
 

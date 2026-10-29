@@ -14,7 +14,6 @@
     <exclude-pattern>.*[/\\]src[/\\]main[/\\].*</exclude-pattern>
     <!-- Harness / orchestration helpers (subprocess launch, Playwright lifecycle) are not tests. -->
     <exclude-pattern>.*[/\\]harness[/\\].*</exclude-pattern>
-    <exclude-pattern>.*[/\\]Stack\.java</exclude-pattern>
 
     <rule name="NoControlStatementsInTests"
           language="java"

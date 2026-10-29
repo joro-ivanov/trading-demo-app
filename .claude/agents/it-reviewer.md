@@ -17,7 +17,8 @@ Read first: `.claude/skills/it-gen/rubric.md` (how to score) and
 - the in-scope test classes and harness files (paths), and `git diff` of them
 - the it-sme matrix (JSON)
 - gate results from the orchestrator: build/PMD/Checkstyle/ArchUnit status, 3× rerun results,
-  TestLint output, and the list of files changed outside the allowed scope
+  the pre-check output, the LogScan JSON, the `userDecisions` list, and the list of files changed outside
+  the allowed scope
 
 ## Procedure
 
@@ -25,33 +26,28 @@ Read first: `.claude/skills/it-gen/rubric.md` (how to score) and
 2. For each matrix case, find the test that implements it and check that its assertions match the
    case's `then`. Open the production code at the case's `source` when an expected value looks
    suspicious. A wrong expectation is blocking, and you must cite the code line.
-3. Read every test method looking for: logic in tests, hand-built or hand-read JSON outside
-   `@RawJsonPayload` (and the annotation used on a scenario that is not an invalid payload: hard cap 0), magic values and constants whose names
-   only echo their value (`TEN = 10`, which PMD can't judge, so you must), more than one scenario per test, data-only
-   duplicates, weak assertions, hidden nondeterminism (current time, shared users/ids, order
-   dependence, missing `atMost`, consumer groups reused), and internal mocking. A slow-dependency
-   case whose stubbed delay is close to the read timeout is a race, and is blocking (C3).
-   **Weak or non-deterministic assertions** are a hard cap (≤ 5). Look for:
-   - partial matches: `contains*`, `doesNotContain*`, `startsWith`, `matches`
-   - ranges: `isGreaterThan`, `isBetween`, `isCloseTo`, `isAfter`
-   - presence-only checks: `isNotNull`, `isNotBlank`, `isNotEmpty`, `isNotEqualTo`
-   - Hamcrest matchers in REST-Assured `body(...)`, and WireMock `containing`/`matching`
-   - workarounds the static checks miss: comparing `toString()` substrings, asserting `.size()`
-     instead of the content, `ignoringFields` on fields that are not server-generated, or
+3. Read every test method against **every** one of conventions.md's test-method rules 1–9 (logic,
+   magic values, weak assertions, hand-built or hand-read JSON, …), including the ones a tool enforces
+   (conventions.md, "Enforced by"). Look hardest for what the tools miss:
+   - constants whose names only echo their value (`TEN = 10`), which PMD can't judge
+   - more than one scenario per test, and data-only duplicates
+   - `@RawJsonPayload` on a scenario that is not an invalid payload (hard cap 0), or a `reason` that
+     doesn't name the payload a DTO cannot express
+   - weak-assertion workarounds (rule 4, hard cap ≤ 5): comparing `toString()` substrings, asserting
+     `.size()` instead of the content, `ignoringFields` on fields that are not server-generated, or
      server-generated fields that are never asserted exactly anywhere
-   For each, the `fix` must say how to make the value deterministic (own owner per test, seed reset,
-   fixed clock, decoded claims) instead of just naming a stronger matcher.
+   - hidden nondeterminism (rule 5): current time, shared users/ids, order dependence, missing
+     `atMost`, Kafka read around `KafkaProbe`, a slow-dependency delay close to the read timeout (a
+     race, blocking under C3)
+   - internal mocking (rule 8)
+   For each weak assertion, the `fix` must say how to make the value deterministic (the remedies in
+   conventions.md rule 4) instead of just naming a stronger matcher.
 4. Read every stub fixture next to the provider DTO it imitates, and check field names and types match.
 5. **Look for hidden failures.** Diff each touched test against its pre-run version (`git diff`), and
-   cross-check against the `userDecisions` list. Any of the following without a matching user
-   decision is a hard cap of 0 and blocking:
-   - an expected value changed to the observed behaviour
-   - an assertion removed or loosened, or a case deleted
-   - `@Disabled`, a rule suppression (`@SuppressWarnings("PMD…")`, `// NOPMD`, `CHECKSTYLE:OFF`) or an
-     exclusion
-   - a gate config edit
-   - a `src/main` change
-   Tests the user decided to leave red, or to track as a known issue, are correct. Don't penalise them.
+   cross-check against the `userDecisions` list. Anything on CLAUDE.md's "Never do these without the
+   user's decision" list ("When a check or test fails") without a matching user decision is a hard cap
+   of 0 and blocking, and goes into `hiddenFailures`. Tests the user decided to leave red, or to track
+   as a known issue, are correct. Don't penalise them.
 6. **Classify every LogScan finding** (service and test logs, **and the container logs**: Postgres, Kafka,
    Redis, under `container-logs/`, from the 3 reruns):
    - **`unhandledHttp500: true` is always `unexpected` and a product defect**, even inside a negative
@@ -72,7 +68,7 @@ Read first: `.claude/skills/it-gen/rubric.md` (how to score) and
    Unexpected findings are not a score penalty by themselves. The orchestrator takes them to the user.
    A finding that reveals a scenario the tests should assert but don't (e.g. a swallowed exception
    behind a 200) is also a coverage gap: add it to `improvements` or `blocking`.
-6. Score each criterion, then apply caps. Be calibrated: 9+ means you would merge it as a
+7. Score each criterion, then apply caps. Be calibrated: 9+ means you would merge it as a
    showcase example without changes.
 
 Every `blocking` and `improvements` entry needs `file`, `line`, `issue` and a concrete `fix` that

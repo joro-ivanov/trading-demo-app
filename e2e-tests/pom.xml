@@ -20,11 +20,23 @@
         the api/ui tests live in src/test/java and consume only *Page and *Service types.
     </description>
 
+    <properties>
+        <!-- JUnit tags Failsafe runs: none by default (the suites need a running stack); see the profiles. -->
+        <e2e.groups></e2e.groups>
+        <e2e.excludedGroups>api,ui</e2e.excludedGroups>
+    </properties>
+
     <dependencies>
         <!-- Shared MarketHours (the @RunDuringMarketHours gate matches the server's session). -->
         <dependency>
             <groupId>com.example.demo</groupId>
             <artifactId>common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- @RawJsonPayload (used by the framework's raw sender) and the shared ArchUnit rules (TestAssertionRules). -->
+        <dependency>
+            <groupId>com.example.demo</groupId>
+            <artifactId>test-rules</artifactId>
             <version>${project.version}</version>
         </dependency>
 
@@ -99,11 +111,6 @@
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.tngtech.archunit</groupId>
-            <artifactId>archunit-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
@@ -114,28 +121,6 @@
             </resource>
         </resources>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-pmd-plugin</artifactId>
-                <configuration>
-                    <rulesets>
-                        <ruleset>${project.basedir}/../build/pmd/test-conventions.xml</ruleset>
-                        <ruleset>${project.basedir}/../build/pmd/no-magic-values.xml</ruleset>
-                        <ruleset>${project.basedir}/../build/pmd/no-raw-json.xml</ruleset>
-                    </rulesets>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <configuration>
-                    <configLocation>${project.basedir}/../build/checkstyle/checkstyle.xml</configLocation>
-                </configuration>
-            </plugin>
             <!-- The e2e suites now end in *Test, so Surefire must explicitly stay out of the
                  api/ui packages; they are owned by Failsafe only. -->
             <plugin>
@@ -153,12 +138,11 @@
             <plugin>
                 <groupId>io.qameta.allure</groupId>
                 <artifactId>allure-maven</artifactId>
-                <version>2.15.2</version>
             </plugin>
             <!-- The e2e suites live under api/ui packages and are run by Failsafe only. They
                  require a running stack, so both groups are excluded from the default build and
                  run via a profile (-Papi-e2e / -Pui-e2e) or via explicit groups after
-                 `docker compose up`. -->
+                 `docker compose up`. A profile only sets the e2e.groups / e2e.excludedGroups properties. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
@@ -167,16 +151,9 @@
                         <include>**/api/*Test.java</include>
                         <include>**/ui/*Test.java</include>
                     </includes>
-                    <excludedGroups>api,ui</excludedGroups>
+                    <groups>${e2e.groups}</groups>
+                    <excludedGroups>${e2e.excludedGroups}</excludedGroups>
                 </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
@@ -186,59 +163,24 @@
     <profiles>
         <profile>
             <id>api-e2e</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
-                        <configuration combine.self="override">
-                            <includes>
-                                <include>**/api/*Test.java</include>
-                                <include>**/ui/*Test.java</include>
-                            </includes>
-                            <groups>api</groups>
-                            <excludedGroups>ui</excludedGroups>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <e2e.groups>api</e2e.groups>
+                <e2e.excludedGroups>ui</e2e.excludedGroups>
+            </properties>
         </profile>
         <profile>
             <id>ui-e2e</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
-                        <configuration combine.self="override">
-                            <includes>
-                                <include>**/api/*Test.java</include>
-                                <include>**/ui/*Test.java</include>
-                            </includes>
-                            <groups>ui</groups>
-                            <excludedGroups>api</excludedGroups>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <e2e.groups>ui</e2e.groups>
+                <e2e.excludedGroups>api</e2e.excludedGroups>
+            </properties>
         </profile>
         <profile>
             <id>all-e2e</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
-                        <configuration combine.self="override">
-                            <includes>
-                                <include>**/api/*Test.java</include>
-                                <include>**/ui/*Test.java</include>
-                            </includes>
-                            <groups>api,ui</groups>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <e2e.groups>api,ui</e2e.groups>
+                <e2e.excludedGroups></e2e.excludedGroups>
+            </properties>
         </profile>
     </profiles>
 </project>

@@ -1,5 +1,7 @@
 package com.example.demo.portfolio.it;
 
+import static com.example.demo.testing.support.fixtures.TestTimeouts.EVENT_TIMEOUT;
+import static com.example.demo.testing.support.fixtures.TestUsers.TESTER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
@@ -22,8 +24,8 @@ class HoldingsIT extends PortfolioITBase {
 
     @Test
     void holdingsEndpointReportsHeldQuantity() {
-        KAFKA_PROBE.sendFill(TESTER, HELD_SYMBOL, BUY, HELD_QUANTITY, FILL_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, HELD_SYMBOL, BUY, HELD_QUANTITY, FILL_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(HELD_SYMBOL).quantity()).isEqualByComparingTo(HELD_QUANTITY));
 
         HoldingResponse holding = api(TOKEN)

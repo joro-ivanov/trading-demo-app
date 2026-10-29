@@ -5,7 +5,7 @@ import java.util.Map;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 
-import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.common.json.Json;
 import com.example.demo.e2e.framework.model.OrderStub;
 import com.example.demo.e2e.framework.model.OrderStatus;
 import com.example.demo.e2e.framework.model.OrderType;

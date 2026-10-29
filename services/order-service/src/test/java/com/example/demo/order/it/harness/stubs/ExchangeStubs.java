@@ -6,6 +6,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.serverError;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 
 import com.example.demo.common.json.Json;
+import com.example.demo.order.exchange.ExchangeAck;
 import com.github.tomakehurst.wiremock.client.MappingBuilder;
 
 /**

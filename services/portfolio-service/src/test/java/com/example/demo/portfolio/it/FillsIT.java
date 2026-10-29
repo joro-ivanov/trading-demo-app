@@ -1,5 +1,7 @@
 package com.example.demo.portfolio.it;
 
+import static com.example.demo.testing.support.auth.TestJwt.token;
+import static com.example.demo.testing.support.fixtures.TestTimeouts.EVENT_TIMEOUT;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
 
@@ -42,12 +44,12 @@ class FillsIT extends PortfolioITBase {
     @Test
     void recentFillsArePersistedAndReturnedNewestFirst() {
         String token = token(VIEW_OWNER);
-        KAFKA_PROBE.sendFill(VIEW_OWNER, AAPL, BUY, AAPL_BUY_QUANTITY, AAPL_BUY_PRICE,
+        EVENTS.sendFill(VIEW_OWNER, AAPL, BUY, AAPL_BUY_QUANTITY, AAPL_BUY_PRICE,
                 EARLIER_FILL_TIME.toString(), FIRST_SEQUENCE);
-        KAFKA_PROBE.sendFill(VIEW_OWNER, MSFT, SELL, MSFT_SELL_QUANTITY, MSFT_SELL_PRICE,
+        EVENTS.sendFill(VIEW_OWNER, MSFT, SELL, MSFT_SELL_QUANTITY, MSFT_SELL_PRICE,
                 LATER_FILL_TIME.toString(), SECOND_SEQUENCE);
 
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             List<FillResponse> fills = recentFills(token);
             assertSoftly(softly -> {
                 softly.assertThat(fills).hasSize(FILLS_SENT);
@@ -64,12 +66,12 @@ class FillsIT extends PortfolioITBase {
     @Test
     void recentFillsWithTheSameTimestampAreReturnedInInsertionOrderDescending() {
         String token = token(TIE_OWNER);
-        KAFKA_PROBE.sendFill(TIE_OWNER, AAPL, BUY, TIE_QUANTITY, TIE_BUY_PRICE,
+        EVENTS.sendFill(TIE_OWNER, AAPL, BUY, TIE_QUANTITY, TIE_BUY_PRICE,
                 EARLIER_FILL_TIME.toString(), FIRST_SEQUENCE);
-        KAFKA_PROBE.sendFill(TIE_OWNER, AAPL, SELL, TIE_QUANTITY, TIE_SELL_PRICE,
+        EVENTS.sendFill(TIE_OWNER, AAPL, SELL, TIE_QUANTITY, TIE_SELL_PRICE,
                 EARLIER_FILL_TIME.toString(), SECOND_SEQUENCE);
 
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             List<FillResponse> fills = recentFills(token);
             assertSoftly(softly -> {
                 softly.assertThat(fills).hasSize(FILLS_SENT);

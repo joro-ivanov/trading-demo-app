@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.example.demo</groupId>
+        <artifactId>trading-demo-app</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>services</artifactId>
+    <packaging>pom</packaging>
+    <name>services (backend service parent)</name>
+    <description>
+        Parent of the backend services: what every service shares (common, the test stack from test-support,
+        the service-only PMD rulesets, IT coverage and the executable 'boot' jar). A service pom declares only
+        its own production dependencies and module-specific test dependencies (e.g. WireMock).
+    </description>
+
+    <modules>
+        <module>auth-service</module>
+        <module>order-service</module>
+        <module>market-data-service</module>
+        <module>portfolio-service</module>
+        <module>notification-service</module>
+        <module>alert-service</module>
+        <module>watchlist-service</module>
+        <module>risk-service</module>
+    </modules>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.example.demo</groupId>
+            <artifactId>common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The shared test stack: Spring Boot test, Testcontainers, REST-Assured, Awaitility, ArchUnit + test-rules. -->
+        <dependency>
+            <groupId>com.example.demo</groupId>
+            <artifactId>test-support</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- On top of the root rulesets: no logic operators/callbacks in ITs, and never a 500. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <configuration>
+                    <rulesets combine.children="append">
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/it-conventions.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-internal-server-error.xml</ruleset>
+                    </rulesets>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Keep the plain jar as the main artifact so integration-tests can depend
+                         on this service's classes; the executable jar gets the 'boot' classifier. -->
+                    <classifier>boot</classifier>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

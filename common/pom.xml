@@ -66,10 +66,11 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Enforces exact-value assertions in this module's tests (TestAssertionsArchitectureTest). -->
+        <!-- The shared test rules (TestAssertionRules), run by CommonTestArchitectureTest. -->
         <dependency>
-            <groupId>com.tngtech.archunit</groupId>
-            <artifactId>archunit-junit5</artifactId>
+            <groupId>com.example.demo</groupId>
+            <artifactId>test-rules</artifactId>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -80,11 +81,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-pmd-plugin</artifactId>
                 <configuration>
-                    <rulesets>
-                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/test-conventions.xml</ruleset>
+                    <rulesets combine.children="append">
                         <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-internal-server-error.xml</ruleset>
-                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-magic-values.xml</ruleset>
-                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-raw-json.xml</ruleset>
                     </rulesets>
                 </configuration>
             </plugin>
