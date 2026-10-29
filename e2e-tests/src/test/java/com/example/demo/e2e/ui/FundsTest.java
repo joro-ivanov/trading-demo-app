@@ -10,9 +10,7 @@ import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import com.example.demo.e2e.framework.pages.DashboardPage;
 import com.example.demo.e2e.framework.pages.RegistrationPage;
@@ -20,16 +18,11 @@ import com.example.demo.e2e.framework.model.Fill;
 import com.example.demo.e2e.framework.model.Side;
 import com.example.demo.e2e.framework.model.TradingSymbols;
 import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
-import com.example.demo.e2e.harness.PlaywrightLifecycle;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
 
 import io.qameta.allure.Allure;
 
 /** The funds panel through the live UI: a fresh user starts at zero and a deposit updates the balance. */
-@Tag("ui")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(PlaywrightLifecycle.class)
 class FundsTest extends BaseUiTest {
 
     private static final NumberFormat MONEY = NumberFormat.getCurrencyInstance(Locale.US);
@@ -39,7 +32,6 @@ class FundsTest extends BaseUiTest {
     /** {@link #DEFAULT_STARTING_CASH} as the funds panel displays it. */
     private static final String STARTING_BALANCE_TEXT = "$10,000.00";
     /** The BUY fill and the SELL fill. */
-    private static final int BUY_AND_SELL_FILLS = 2;
     /** The funds panel shows cents. */
     private static final int DISPLAYED_SCALE = 2;
 

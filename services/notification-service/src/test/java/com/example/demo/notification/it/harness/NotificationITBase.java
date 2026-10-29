@@ -2,47 +2,42 @@ package com.example.demo.notification.it.harness;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.slf4j.LoggerFactory;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
+
+import com.example.demo.testing.RawJsonPayload;
+import com.example.demo.testing.support.containers.TestContainers;
+import com.example.demo.testing.support.it.ServiceITBase;
+import com.example.demo.testing.support.kafka.KafkaProbe;
 
 /**
  * Shared harness for the notification-service integration tests (docs/DESIGN.md §7.2): the real
- * STOMP/SockJS gateway on a random port against a real Kafka (Testcontainers). Tests produce to the
- * service's input topics and observe what STOMP clients receive. The Kafka container is a singleton
- * started once per JVM, so every {@code *IT} class shares it and the cached Spring context.
+ * STOMP/SockJS gateway on a random port ({@link ServiceITBase}) against a real Kafka (Testcontainers).
+ * Tests produce to the service's input topics and observe what STOMP clients receive. The Kafka container
+ * is a singleton started once per JVM, so every {@code *IT} class shares it and the cached Spring context.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-public abstract class NotificationITBase {
+public abstract class NotificationITBase extends ServiceITBase {
 
-    protected static final String SECRET = "demo-secret-demo-secret-demo-secret-1234";
-
-    @SuppressWarnings("resource")
-    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0")
-            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.kafka")));
+    static final ConfluentKafkaContainer KAFKA = TestContainers.kafka();
+    private static final KafkaProbe KAFKA_PROBE;
 
     static {
         KAFKA.start();
+        KAFKA_PROBE = new KafkaProbe(KAFKA.getBootstrapServers());
     }
-
-    @LocalServerPort
-    int port;
 
     /** STOMP client side of the gateway; sessions opened in a test are disconnected after it. */
     protected StompProbe stomp;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        TestContainers.kafka(registry, KAFKA);
     }
 
     @BeforeEach
     void openStompProbe() {
-        stomp = new StompProbe(port, SECRET, KAFKA.getBootstrapServers());
+        stomp = new StompProbe(port, KAFKA_PROBE);
     }
 
     @AfterEach
@@ -52,12 +47,12 @@ public abstract class NotificationITBase {
 
     /** Publishes {@code event} (serialized with {@code Json}) to {@code topic} and waits until Kafka has acknowledged it. */
     protected static void produce(String topic, String key, Object event) {
-        KafkaProbe.produce(KAFKA.getBootstrapServers(), topic, key, event);
+        KAFKA_PROBE.send(topic, key, event);
     }
 
     /** Publishes {@code payload} verbatim: only for malformed messages no event record can produce. */
     @RawJsonPayload(reason = "raw sender for malformed Kafka messages")
     protected static void produceRaw(String topic, String key, String payload) {
-        KafkaProbe.produceRaw(KAFKA.getBootstrapServers(), topic, key, payload);
+        KAFKA_PROBE.sendRaw(topic, key, payload);
     }
 }

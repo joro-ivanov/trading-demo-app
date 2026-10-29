@@ -1,6 +1,6 @@
 package com.example.demo.e2e.api;
 
-import com.example.demo.e2e.framework.allure.TestLogArtifacts;
+import com.example.demo.e2e.framework.config.Config;
 import com.example.demo.e2e.framework.http.ApiResponse;
 import com.example.demo.e2e.framework.model.ErrorResponse;
 import com.example.demo.e2e.framework.model.Fill;
@@ -22,12 +22,9 @@ import com.example.demo.e2e.framework.support.Lookup;
 import com.example.demo.e2e.framework.support.OrderFactory;
 import com.example.demo.e2e.framework.ws.NotificationsWsService;
 import com.example.demo.e2e.framework.ws.WsSession;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
 import io.qameta.allure.Allure;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -68,20 +65,8 @@ import static org.awaitility.Awaitility.await;
  * of the same price taken back to back and retried until no tick lands in between. Skipped if the
  * stack is not up.
  */
-@Tag("api")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(TestLogArtifacts.class)
 class TradingTest extends BaseApiTest {
 
-    /** Quantity of the main order in most trading scenarios. */
-    private static final int ORDER_QUANTITY = 10;
-    private static final BigDecimal ORDER_SIZE = BigDecimal.valueOf(ORDER_QUANTITY);
-    /** Position bought first so that a later SELL passes the short-sell guard. */
-    private static final BigDecimal SEEDED_POSITION = new BigDecimal("20");
-    /** Below any market price: a SELL limit or BUY stop at it is marketable, a BUY limit at it rests. */
-    private static final BigDecimal BELOW_MARKET_PRICE = new BigDecimal("0.01");
-    /** 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits. */
-    private static final BigDecimal UNREACHABLE_STOP_PRICE = new BigDecimal("1000");
     private static final BigDecimal NEGATIVE_QUANTITY = new BigDecimal("-5");
     private static final BigDecimal WS_FILL_QUANTITY = new BigDecimal("5");
     private static final String FILLS_ALICE_PREFIX = "fillsa";
@@ -90,8 +75,8 @@ class TradingTest extends BaseApiTest {
     private static final BigDecimal NEW_USER_DEPOSIT = new BigDecimal("100000");
     private static final BigDecimal NEW_USER_BUY_QUANTITY = new BigDecimal("3");
     private static final BigDecimal PNL_BUY_QUANTITY = new BigDecimal("2");
-    /** The stack's shared HS256 secret (docker-compose JWT_SECRET default). */
-    private static final String JWT_SECRET = "demo-secret-demo-secret-demo-secret-1234";
+    /** The stack's shared HS256 secret: e2e config {@code jwt.secret} (env {@code JWT_SECRET}, as for the services). */
+    private static final String JWT_SECRET = Config.get().get("jwt.secret");
     private static final Instant EXPIRED_TOKEN_ISSUED_AT = Instant.parse("2026-07-02T15:00:10Z");
     private static final String EXPIRED_TOKEN_EXPIRY = "2026-07-02T15:01:10Z";
     private static final String TOKEN_EXPIRED_REASON = "Jwt expired at " + EXPIRED_TOKEN_EXPIRY;
@@ -117,7 +102,7 @@ class TradingTest extends BaseApiTest {
 
         Allure.step("The " + symbol + " position appears in the portfolio");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position position = findPositionBySymbol(symbol);
+            Position position = position(symbol);
             assertSoftly(softly -> {
                 softly.assertThat(position.symbol()).isEqualTo(symbol);
                 softly.assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
@@ -138,7 +123,7 @@ class TradingTest extends BaseApiTest {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
         OrderResponse seedOrder = OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION).as(OrderResponse.class);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position seededPosition = findPositionBySymbol(symbol);
+            Position seededPosition = position(symbol);
             assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
@@ -158,7 +143,7 @@ class TradingTest extends BaseApiTest {
 
         Allure.step("The " + symbol + " position remains represented in the portfolio");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position position = findPositionBySymbol(symbol);
+            Position position = position(symbol);
             assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
 
@@ -194,7 +179,7 @@ class TradingTest extends BaseApiTest {
         String orderId = orderResponse.id();
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position position = findPositionBySymbol(symbol);
+            Position position = position(symbol);
             assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
@@ -210,7 +195,7 @@ class TradingTest extends BaseApiTest {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
         OrderResponse seedOrder = OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION).as(OrderResponse.class);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position seededPosition = findPositionBySymbol(symbol);
+            Position seededPosition = position(symbol);
             assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
@@ -231,7 +216,7 @@ class TradingTest extends BaseApiTest {
         String orderId = order.id();
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position position = findPositionBySymbol(symbol);
+            Position position = position(symbol);
             assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
@@ -261,7 +246,7 @@ class TradingTest extends BaseApiTest {
         String orderId = order.id();
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position position = findPositionBySymbol(symbol);
+            Position position = position(symbol);
             assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
@@ -277,7 +262,7 @@ class TradingTest extends BaseApiTest {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
         OrderResponse seedOrder = OrdersService.placeMarketOrder(token, symbol, Side.BUY, SEEDED_POSITION).as(OrderResponse.class);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position seededPosition = findPositionBySymbol(symbol);
+            Position seededPosition = position(symbol);
             assertThat(seededPosition.quantity()).isEqualByComparingTo(SEEDED_POSITION);
         });
 
@@ -302,7 +287,7 @@ class TradingTest extends BaseApiTest {
         String orderId = order.id();
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position position = findPositionBySymbol(symbol);
+            Position position = position(symbol);
             assertThat(position.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
@@ -355,7 +340,7 @@ class TradingTest extends BaseApiTest {
         Allure.step("Seed a position in " + symbol + " so a SELL passes the short-sell guard");
         OrderResponse seedOrder = OrdersService.placeMarketOrder(token, symbol, Side.BUY, ORDER_SIZE).as(OrderResponse.class);
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position seededPosition = findPositionBySymbol(symbol);
+            Position seededPosition = position(symbol);
             assertThat(seededPosition.quantity()).isEqualByComparingTo(ORDER_SIZE);
         });
 
@@ -476,7 +461,7 @@ class TradingTest extends BaseApiTest {
         Allure.step("It fills at the persisted market fill price, not the " + limitPrice + " limit");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             Fill latestFill = Lookup.fill(PortfolioService.recentFills(token).asList(Fill.class), order.id());
-            Position googPosition = findPositionBySymbol(TradingSymbols.GOOG);
+            Position googPosition = position(TradingSymbols.GOOG);
             assertSoftly(softly -> {
                 softly.assertThat(latestFill.price()).isEqualByComparingTo(googPosition.avgPrice());
                 softly.assertThat(latestFill.price()).isNotEqualByComparingTo(limitPrice);
@@ -665,7 +650,7 @@ class TradingTest extends BaseApiTest {
         Allure.step("The order and the position appear under the new user");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
             assertThat(findOrderById(orderId).id()).isEqualTo(orderId);
-            Position aaplPosition = findPositionBySymbol(TradingSymbols.AAPL);
+            Position aaplPosition = position(TradingSymbols.AAPL);
             assertThat(aaplPosition.quantity()).isEqualByComparingTo(NEW_USER_BUY_QUANTITY);
         });
     }
@@ -682,7 +667,7 @@ class TradingTest extends BaseApiTest {
         // read back to back and retried until both reflect the same tick.
         Allure.step("The AAPL position is marked at exactly the live price market-data serves");
         await().atMost(AWAIT_TIMEOUT).untilAsserted(() -> {
-            Position aapl = findPositionBySymbol(TradingSymbols.AAPL);
+            Position aapl = position(TradingSymbols.AAPL);
             Price servedPrice = MarketDataService.latestPrice(token, TradingSymbols.AAPL).as(Price.class);
             assertSoftly(softly -> {
                 softly.assertThat(aapl.quantity()).isEqualByComparingTo(PNL_BUY_QUANTITY);
@@ -691,7 +676,7 @@ class TradingTest extends BaseApiTest {
         });
 
         Allure.step("Its unrealized P&L is exactly (mark - average cost) × quantity");
-        Position markedPosition = findPositionBySymbol(TradingSymbols.AAPL);
+        Position markedPosition = position(TradingSymbols.AAPL);
         BigDecimal expectedPnl = markedPosition.marketPrice().subtract(markedPosition.avgPrice())
                 .multiply(markedPosition.quantity());
         assertThat(markedPosition.unrealizedPnl()).isEqualByComparingTo(expectedPnl);
@@ -834,10 +819,6 @@ class TradingTest extends BaseApiTest {
             softly.assertThat(problem.message()).isEqualTo(JWT_DECODE_ERROR + TOKEN_EXPIRED_REASON);
             softly.assertThat(problem.path()).isEqualTo(PORTFOLIO);
         });
-    }
-
-    private Position findPositionBySymbol(String symbol) {
-        return Lookup.position(PortfolioService.positions(token).asList(Position.class), symbol);
     }
 
     private OrderResponse findOrderById(String orderId) {

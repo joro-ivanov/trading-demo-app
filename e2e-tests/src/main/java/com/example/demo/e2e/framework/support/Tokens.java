@@ -3,7 +3,7 @@ package com.example.demo.e2e.framework.support;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
-import com.example.demo.e2e.framework.http.Json;
+import com.example.demo.common.json.Json;
 import com.example.demo.e2e.framework.model.TokenClaims;
 
 /** Decodes (without verifying) the claims of a JWT, so tests assert who a token was issued to. */

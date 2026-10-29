@@ -3,6 +3,8 @@ package com.example.demo.e2e.framework.http;
 import java.util.List;
 import java.util.Map;
 
+import com.example.demo.common.json.Json;
+
 /**
  * Immutable result of an HTTP call. Exposes the raw body plus two deserialization helpers:
  * {@link #as(Class)} for a single object and {@link #asList(Class)} for a JSON array

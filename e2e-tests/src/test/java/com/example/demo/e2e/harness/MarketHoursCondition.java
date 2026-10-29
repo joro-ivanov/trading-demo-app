@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ConditionEvaluationResult;
 import org.junit.jupiter.api.extension.ExecutionCondition;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
+import com.example.demo.common.time.Clocks;
 import com.example.demo.common.trading.MarketHours;
 import com.example.demo.e2e.framework.config.Config;
 
@@ -41,8 +42,8 @@ public class MarketHoursCondition implements ExecutionCondition {
     }
 
     private static Instant effectiveNow() {
-        String fixedInstant = Config.get().get("app.clock.fixed-instant");
-        return fixedInstant == null || fixedInstant.isBlank() ? Instant.now() : Instant.parse(fixedInstant);
+        // The same app.clock.fixed-instant the services read (common Clocks), so gate and server agree.
+        return Clocks.systemUtcOrFixed(Config.get().get("app.clock.fixed-instant")).instant();
     }
 
     private static String formatCurrentTimes(Instant now) {

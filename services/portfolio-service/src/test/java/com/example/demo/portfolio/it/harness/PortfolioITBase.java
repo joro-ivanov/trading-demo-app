@@ -1,101 +1,58 @@
 package com.example.demo.portfolio.it.harness;
 
+import static com.example.demo.testing.support.auth.TestJwt.token;
+import static com.example.demo.testing.support.fixtures.TestUsers.TESTER;
+
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.util.List;
 
-import org.slf4j.LoggerFactory;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.example.demo.common.json.Json;
-import com.example.demo.common.security.Jwt;
 import com.example.demo.portfolio.web.FillResponse;
 import com.example.demo.portfolio.web.FundsDtos.BalanceResponse;
 import com.example.demo.portfolio.web.FundsDtos.FundsRequest;
 import com.example.demo.portfolio.web.PositionResponse;
-
-import io.restassured.RestAssured;
-import io.restassured.config.ObjectMapperConfig;
-import io.restassured.config.RestAssuredConfig;
-import io.restassured.http.ContentType;
-import io.restassured.specification.RequestSpecification;
+import com.example.demo.testing.support.containers.TestContainers;
+import com.example.demo.testing.support.it.ServiceITBase;
+import com.example.demo.testing.support.kafka.KafkaProbe;
 
 /**
  * Shared harness for the portfolio-service integration tests (docs/DESIGN.md §7.2): the real service
- * on a random port against real Postgres + cp-kafka (Testcontainers), driven over HTTP with
- * REST-Assured. Inbound fills/ticks are produced with {@link KafkaProbe}. Containers are singletons
- * started once per JVM, so every {@code *IT} class shares them and the cached Spring context —
- * which is why each test uses its own symbol and/or owner (positions accumulate).
+ * on a random port ({@link ServiceITBase}) against real Postgres + cp-kafka (Testcontainers). Inbound
+ * fills/ticks are produced with {@link PortfolioEvents}. Containers are singletons started once per JVM,
+ * so every {@code *IT} class shares them and the cached Spring context — which is why each test uses its
+ * own symbol and/or owner (positions accumulate).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-public abstract class PortfolioITBase {
+public abstract class PortfolioITBase extends ServiceITBase {
 
-    protected static final String SECRET = "demo-secret-demo-secret-demo-secret-1234";
-    /** Owner of fills sent without an explicit owner, and subject of {@link #TOKEN}. */
-    protected static final String TESTER = "tester";
+    /** A token for {@code TESTER}, the owner of fills sent without an explicit owner. */
     protected static final String TOKEN = token(TESTER);
     /** Fill sides as the {@code fills} topic carries them. */
     protected static final String BUY = "BUY";
     protected static final String SELL = "SELL";
-    /** How long Kafka-driven effects (positions, fills, cash) are awaited. */
-    protected static final Duration WAIT = Duration.ofSeconds(20);
     protected static final String DEPOSIT_PATH = "/funds/deposit";
     protected static final String WITHDRAW_PATH = "/funds/withdraw";
     protected static final String HOLDINGS_PATH = "/portfolio/holdings/{symbol}";
-    /** REST-Assured (de)serializes request and response DTOs with the project's {@code Json}. */
-    private static final RestAssuredConfig DTO_CONFIG = RestAssuredConfig.config()
-            .objectMapperConfig(new ObjectMapperConfig(new JsonObjectMapper()));
 
-    @SuppressWarnings("resource")
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine")
-            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.postgres")));
+    static final PostgreSQLContainer POSTGRES = TestContainers.postgres();
+    static final ConfluentKafkaContainer KAFKA = TestContainers.kafka();
 
-    @SuppressWarnings("resource")
-    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.8.0")
-            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.kafka")));
-
-    protected static final KafkaProbe KAFKA_PROBE;
+    protected static final PortfolioEvents EVENTS;
 
     static {
         POSTGRES.start();
         KAFKA.start();
-        KAFKA_PROBE = new KafkaProbe(KAFKA.getBootstrapServers());
+        EVENTS = new PortfolioEvents(new KafkaProbe(KAFKA.getBootstrapServers()));
     }
-
-    @LocalServerPort
-    int port;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
-    }
-
-    /** An unauthenticated JSON request to the running service. */
-    protected RequestSpecification api() {
-        return RestAssured.given()
-                .baseUri("http://localhost")
-                .port(port)
-                .config(DTO_CONFIG)
-                .contentType(ContentType.JSON);
-    }
-
-    /** A JSON request carrying {@code Authorization: Bearer <token>}. */
-    protected RequestSpecification api(String token) {
-        return api().header("Authorization", "Bearer " + token);
-    }
-
-    /** A valid HS256 token for {@code subject}, signed with the shared secret (1 hour). */
-    protected static String token(String subject) {
-        return Jwt.issue(subject, SECRET, 3600);
+        TestContainers.datasource(registry, POSTGRES);
+        TestContainers.kafka(registry, KAFKA);
     }
 
     /** {@code GET /portfolio} as the token's owner (expects 200). */
@@ -112,7 +69,7 @@ public abstract class PortfolioITBase {
                 .orElseThrow(() -> new AssertionError("no position for " + symbol));
     }
 
-    /** {@link #position(String, String)} for {@link #TESTER}. */
+    /** {@link #position(String, String)} for {@code TESTER}. */
     protected PositionResponse position(String symbol) {
         return position(TOKEN, symbol);
     }

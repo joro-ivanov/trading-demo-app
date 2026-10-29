@@ -3,6 +3,7 @@ package com.example.demo.marketdata.it.harness;
 import java.math.BigDecimal;
 
 import com.example.demo.marketdata.match.OrderSubmittedEvent;
+import com.example.demo.testing.support.contracts.OrderRestingEvent;
 
 /**
  * Named values and event factories shared by the market-data-service ITs: the {@code orders.submitted}
@@ -15,14 +16,9 @@ public final class MarketDataFixtures {
     /** A symbol the feed never prices, so the cache has nothing for it. */
     public static final String UNCACHED_SYMBOL = "ZZZZ";
 
-    public static final String ORDERS_SUBMITTED = "orders.submitted";
-
     public static final String BUY = "BUY";
     /** The status order-service publishes every new order with. */
     public static final String SUBMITTED = "SUBMITTED";
-    /** JWT subject when the caller's identity does not matter. */
-    public static final String TEST_SUBJECT = "tester";
-
     private static final String PRICES = "/prices/";
 
     private MarketDataFixtures() {

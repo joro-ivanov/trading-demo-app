@@ -47,25 +47,11 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Test infrastructure -->
+        <!-- Test infrastructure: the shared test stack and test-rules, plus the WireMock exchange. -->
         <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.awaitility</groupId>
-            <artifactId>awaitility</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.rest-assured</groupId>
-            <artifactId>rest-assured</artifactId>
+            <groupId>com.example.demo</groupId>
+            <artifactId>test-support</artifactId>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -73,32 +59,22 @@
             <artifactId>wiremock</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-postgresql</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-kafka</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- Enforces exact-value assertions in this module's tests (TestAssertionsArchitectureTest). -->
-        <dependency>
-            <groupId>com.tngtech.archunit</groupId>
-            <artifactId>archunit-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- Cross-service tests are *IT, run by Failsafe in the integration-test phase. -->
+            <!-- Like the services: no logic operators/callbacks in the flagship test, and never a 500. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <configuration>
+                    <rulesets combine.children="append">
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/it-conventions.xml</ruleset>
+                        <ruleset>${maven.multiModuleProjectDirectory}/build/pmd/no-internal-server-error.xml</ruleset>
+                    </rulesets>
+                </configuration>
+            </plugin>
+            <!-- Cross-service tests are *IT, run by Failsafe (bound in the root pom) in the integration-test phase. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
@@ -112,14 +88,6 @@
                         <notification.jar>${project.basedir}/../services/notification-service/target/notification-service-${project.version}-boot.jar</notification.jar>
                     </systemPropertyVariables>
                 </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

@@ -7,8 +7,6 @@ import static org.awaitility.Awaitility.await;
 import java.math.BigDecimal;
 import java.util.stream.Stream;
 
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -26,8 +24,6 @@ import com.example.demo.e2e.framework.service.order.OrdersService;
 import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
 import com.example.demo.e2e.framework.support.Lookup;
 import com.example.demo.e2e.framework.support.OrderFactory;
-import com.example.demo.e2e.harness.PlaywrightLifecycle;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
 
 import io.qameta.allure.Allure;
@@ -38,22 +34,10 @@ import io.qameta.allure.Allure;
  * (skipped if it is not up). Tagged {@code ui} so it is excluded from the default {@code verify}
  * and run via {@code mvn -Pui-e2e verify}. Order placement is gated to market hours.
  */
-@Tag("ui")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(PlaywrightLifecycle.class)
 class TradingTest extends BaseUiTest {
 
-    /** Quantity of the main order in every dashboard trading scenario. */
-    private static final int ORDER_QUANTITY = 10;
-    private static final BigDecimal ORDER_SIZE = BigDecimal.valueOf(ORDER_QUANTITY);
-    /** Position bought first (via the API) so that a later SELL passes the short-sell guard. */
-    private static final BigDecimal SEEDED_POSITION = new BigDecimal("20");
     /** A MARKET order has no price; the ticket's price field is left at zero. */
     private static final String NO_PRICE = "0";
-    /** Below any market price: a SELL limit or BUY stop at it is marketable, a BUY limit at it rests. */
-    private static final String BELOW_MARKET_PRICE = "0.01";
-    /** 10x the demo prices: never reached by the feed (non-marketable), notional within risk limits. */
-    private static final String UNREACHABLE_STOP_PRICE = "1000";
 
     @RunDuringMarketHours
     @ParameterizedTest(name = "BUY MARKET {0} through the dashboard")
@@ -146,7 +130,7 @@ class TradingTest extends BaseUiTest {
         OrderTicketPage ticket = orderTicketPage();
 
         Allure.step("Place a marketable LIMIT SELL 10 " + symbol + " via the ticket");
-        dashboard.placeOrder(symbol, Side.SELL, ORDER_QUANTITY, OrderType.LIMIT, BELOW_MARKET_PRICE);
+        dashboard.placeOrder(symbol, Side.SELL, ORDER_QUANTITY, OrderType.LIMIT, BELOW_MARKET_PRICE.toPlainString());
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -168,7 +152,7 @@ class TradingTest extends BaseUiTest {
         OrderTicketPage ticket = orderTicketPage();
 
         Allure.step("Place a marketable STOP BUY 10 " + symbol + " via the ticket");
-        dashboard.placeOrder(symbol, Side.BUY, ORDER_QUANTITY, OrderType.STOP, BELOW_MARKET_PRICE);
+        dashboard.placeOrder(symbol, Side.BUY, ORDER_QUANTITY, OrderType.STOP, BELOW_MARKET_PRICE.toPlainString());
 
         ticket.awaitButtonIdle();
         assertThat(ticket.hasOrderError()).isFalse();
@@ -243,11 +227,8 @@ class TradingTest extends BaseUiTest {
 
     private static Stream<Arguments> pendingTypedOrders() {
         return Stream.of(
-                Arguments.of(OrderType.LIMIT, BELOW_MARKET_PRICE),
-                Arguments.of(OrderType.STOP, UNREACHABLE_STOP_PRICE));
+                Arguments.of(OrderType.LIMIT, BELOW_MARKET_PRICE.toPlainString()),
+                Arguments.of(OrderType.STOP, UNREACHABLE_STOP_PRICE.toPlainString()));
     }
 
-    private Position position(String symbol) {
-        return Lookup.position(PortfolioService.positions(token).asList(Position.class), symbol);
-    }
 }

@@ -5,6 +5,7 @@ import static com.example.demo.auth.it.harness.AuthFixtures.LOGIN;
 import static com.example.demo.auth.it.harness.AuthFixtures.SEEDED_PASSWORD;
 import static com.example.demo.auth.it.harness.AuthFixtures.TOKEN_TTL_SECONDS;
 import static com.example.demo.auth.it.harness.AuthFixtures.loginRequest;
+import static com.example.demo.testing.support.auth.TestJwt.claims;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import com.example.demo.auth.it.harness.AuthITBase;
 import com.example.demo.auth.web.AuthDtos.LoginResponse;
 import com.example.demo.common.json.Json;
+import com.example.demo.testing.support.auth.TestJwt.TokenClaims;
 
 /** {@code POST /auth/login} (public). */
 class LoginIT extends AuthITBase {
@@ -33,7 +35,7 @@ class LoginIT extends AuthITBase {
         LoginResponse response = Json.read(body, LoginResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(response.username()).isEqualTo(ALICE.username());
-            softly.assertThat(claimsOf(response.token())).isEqualTo(new TokenClaims(ALICE.username(), TOKEN_TTL_SECONDS));
+            softly.assertThat(claims(response.token())).isEqualTo(new TokenClaims(ALICE.username(), TOKEN_TTL_SECONDS));
         });
     }
 

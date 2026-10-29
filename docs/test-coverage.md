@@ -32,6 +32,17 @@ Primary test styles:
 - unit tests
 - architecture/style gates through the reactor build
 
+### `testing/test-rules`, `testing/test-support`
+
+Test infrastructure shared by every module, so it exists once (production-grade test code):
+
+- `test-rules`: the ArchUnit rule libraries (`TestAssertionRules`, `IntegrationTestRules`,
+  `ServiceArchitectureRules`) and the only `@RawJsonPayload`; each module runs them from a small class
+  naming its package
+- `test-support` (test scope): the IT plumbing (`ServiceITBase`, `TestContainers` + `ContainerLogs`,
+  `KafkaProbe`, `StompClient`, `TestJwt`, `MutableClock`, shared fixtures and contract DTOs,
+  `logback-test-base.xml`) and the shared test stack
+
 ### `services/auth-service`
 
 What is covered:
@@ -235,8 +246,9 @@ Typical tooling:
 - WireMock for the external HTTP/WS dependencies only; nothing internal is mocked (ArchUnit-enforced)
 - REST-Assured over the real HTTP port (RANDOM_PORT)
 
-One class per endpoint or Kafka listener, under `<service>/src/test/java/.../it/`, with plumbing
-in `it/harness/`:
+One class per endpoint or Kafka listener, under `<service>/src/test/java/.../it/`, with service-specific
+plumbing in `it/harness/` and the shared plumbing (`ServiceITBase`, `TestContainers`, `KafkaProbe`, `TestJwt`,
+`MutableClock`, …) in `testing/test-support`:
 
 | Service | Classes (executed cases) | Total |
 |---|---|---|
@@ -335,11 +347,12 @@ What is enforced:
 - import/style hygiene with Checkstyle
 - frontend linting with ESLint
 - frontend dependency boundaries with dependency-cruiser
-- no internal mocking in ITs (ArchUnit `<Svc>IntegrationTestArchitectureTest`); no weak / non-deterministic
-  assertions in any backend test (ArchUnit `<Module>TestAssertionsArchitectureTest` in every service, common,
-  integration-tests and wiremock-ws-spike)
-- no HTTP 500 produced or expected (PMD `no-internal-server-error.xml`, ArchUnit `neverProduceInternalServerError`)
-- TestLint (fast regex pre-check) and LogScan (service, test and container logs of IT runs) in the `/it-gen` workflow
+- the test rules (no logic, exact values, no magic values, DTOs only, no sleeps, no internal mocking in ITs,
+  no HTTP 500): shared ArchUnit rule libraries in `testing/test-rules`, run by every module's
+  `<Module>TestArchitectureTest` / `<Svc>ArchitectureTest` (e2e: `E2eArchitectureTest`), plus the PMD rulesets
+  in `build/pmd/`. Which tool enforces which rule: `.claude/skills/it-gen/conventions.md`, "Enforced by"
+- the `/it-gen` fast pre-check (PMD, Checkstyle, `*ArchitectureTest`, no Docker) and LogScan (service, test
+  and container logs of IT runs)
 
 ## What This Repository Is Showing
 

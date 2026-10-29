@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Default test logging for modules without their own logback-test.xml. -->
+<configuration>
+    <include resource="logback-test-base.xml"/>
+</configuration>

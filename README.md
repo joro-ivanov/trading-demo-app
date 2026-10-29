@@ -405,58 +405,41 @@ For the detailed e2e execution model and reporting behavior, see
 
 ## Quality gates
 
-Four static checks guard the Java code. Each looks at the code at a different level, so each
+Three static checks guard the Java code. Each looks at the code at a different level, so each
 catches what the others cannot:
 
 | Check | Looks at | Catches | Runs in |
 |---|---|---|---|
 | **Checkstyle** | source form | star / unused / redundant imports, one top-level class per file | `mvn verify` (fails the build) |
 | **PMD** | syntax tree | logic in tests: control statements everywhere; also `&&` `\|\|` `!` `==` `!=` and `forEach`/`filter`/`ifPresent` callbacks in the service modules; magic values (unnamed strings/numbers) and hand-written JSON literals in every test; producing or expecting HTTP 500 in the backend | `mvn verify` (fails the build) |
-| **ArchUnit** | compiled classes and calls | layering, no field injection or `java.util.Date`; in ITs no Mockito, `*IT` in the `it` package, no weak assertions; no JsonPath/`JsonNode`/raw `body(String)` outside `@RawJsonPayload` | `mvn test` (unit tests, fails the build) |
-| **TestLint** | source text (regex) | a fast approximation of the PMD and ArchUnit test rules, incl. magic values and hand-written JSON | `/it-gen` gate and on demand |
+| **ArchUnit** | compiled classes and calls | layering, no field injection or `java.util.Date`, never a 500 in production code; in every module's tests (e2e included) no weak assertions, no `Thread.sleep`, no JsonPath/`JsonNode`/raw `body(String)` outside `@RawJsonPayload`; in service ITs no Mockito and `*IT` in the `it` package | `mvn test` (unit tests, fails the build) |
 
-- **Checkstyle** (`build/checkstyle/checkstyle.xml`) is a style checker. Here it only enforces import
-  hygiene and one top-level class per file: cheap consistency that catches leftovers such as an
-  unused import after a refactor.
-- **PMD** parses source into a syntax tree and matches XPath rules against it.
-  `build/pmd/test-conventions.xml` (all modules) bans `if/else`, `for`, `while`, `switch`, ternary and
-  `try` in tests. `build/pmd/it-conventions.xml` (backend services) adds boolean and comparison
-  operators and callback loops. Production code and `harness/` helper packages are exempt. The goal is
-  linear tests (setup → action → assert): one scenario per test, and `@ParameterizedTest` wherever
-  cases differ only in data.
-  `build/pmd/no-magic-values.xml` (every module, e2e included) bans **magic values** in tests: every
-  string and number a test uses must be named. That means a constant, a local variable, or an
-  annotation data table such as `@CsvSource`. `0`, `1`, `""` and description prose (`Allure.step`,
-  assertion descriptions, `AssertionError` messages) are allowed inline. ArchUnit can't enforce this,
-  because the compiler inlines constants into the bytecode.
-  `build/pmd/no-raw-json.xml` (all test code, harness and the e2e framework included) bans **hand-written
-  JSON**: tests send DTOs/records and assert on deserialized objects. A JSON-looking literal is allowed
-  only inside a method annotated `@RawJsonPayload(reason = "…")`, i.e. a negative test whose payload no
-  DTO can express (wrong JSON type, missing vs `null`, broken JSON, a malformed Kafka/WS message).
+The test rules themselves, and the exact rule/ruleset behind each one, are owned by
+[`.claude/skills/it-gen/conventions.md`](.claude/skills/it-gen/conventions.md) ("Test-method rules"
+and the "Enforced by" table). In short: linear tests (setup → action → assert), one scenario per test,
+`@ParameterizedTest` wherever cases differ only in data, exact values, no magic values, DTOs only
+(hand-written JSON only in a `@RawJsonPayload(reason = "…")` invalid-payload test), Awaitility instead
+of sleeps, and in per-service ITs only external communication mocked.
+
+- **Checkstyle** (`build/checkstyle/checkstyle.xml`) is a style checker: cheap consistency that catches
+  leftovers such as an unused import after a refactor.
+- **PMD** parses source into a syntax tree and matches XPath rules against it (`build/pmd/`). The root
+  pom applies the test rulesets to every module; `services/pom.xml` appends the service-only ones.
+  Production code and `harness/` plumbing packages are exempt from the test rules. Magic values are a
+  PMD rule because ArchUnit can't see them: the compiler inlines constants into the bytecode.
 - **ArchUnit** loads the compiled bytecode and checks dependencies and method calls as JUnit tests.
   It sees what source parsing can't: which class owns a called method, annotations on fields, and
-  calls inside lambdas.
-  - `<Svc>ArchitectureTest` covers production layering.
-  - `<Svc>IntegrationTestArchitectureTest` forbids internal mocking in ITs (only external
-    communication is stubbed, with WireMock), keeps `*IT` in the `it` package and forbids expecting a 500.
-  - `<Module>TestAssertionsArchitectureTest`, generated from one template into every backend module
-    (the services, common, integration-tests and wiremock-ws-spike), forbids weak or non-deterministic
-    assertions in *all* their tests: unit, ArchUnit and ITs. The banned calls are AssertJ
-    `contains`/`isNotNull`/`isGreaterThan`…, Hamcrest `containsString`… and WireMock `containing`….
-    e2e is not covered by this class, but its tests follow the same exact-value style (see "General e2e
-    test conventions") and TestLint checks them.
-    The same class forbids reading JSON by hand (JsonPath, `JsonNode`, `readTree`, REST-Assured
-    `body("path", matcher)`, WireMock `matchingJsonPath`) and allows a raw `body(String)` or a call to a
-    `@RawJsonPayload` raw sender only from a `@RawJsonPayload` method. The annotation itself may sit
-    only on test methods and in `harness` packages. `E2eArchitectureTest` enforces the same for e2e.
-  - The e2e module has its own framework invariants: engine isolation, records, static service
-    methods, explicit `Page` constructors, and every `@RunDuringMarketHours` method is also a `@Test` or
-    `@ParameterizedTest` (otherwise it would silently never run).
-- **TestLint** (`.claude/skills/it-gen/scripts/TestLint.java`) is a dependency-free, single-file Java
-  script: `java TestLint.java <path>`. It returns `file:line` findings in under a second, with no Maven
-  or Docker. The `/it-gen` workflow runs it after every writer round. PMD and ArchUnit remain the
-  authority; TestLint is only fast feedback.
+  calls inside lambdas. The rules are shared libraries in `testing/test-rules` (`TestAssertionRules`,
+  `IntegrationTestRules`, `ServiceArchitectureRules`); each module runs them from a small class naming
+  its package (`<Module>TestArchitectureTest` for tests, `<Svc>ArchitectureTest` for production code).
+  The e2e module's `E2eArchitectureTest` adds its own framework invariants: engine isolation, records,
+  static service methods, explicit `Page` constructors, and every `@RunDuringMarketHours` method is
+  also a `@Test` or `@ParameterizedTest` (otherwise it would silently never run).
 - **dependency-cruiser + ESLint** cover the frontend: layer boundaries and the Rules of Hooks.
+
+The `/it-gen` workflow runs PMD, Checkstyle and every `*ArchitectureTest` as a fast pre-check (seconds,
+no Docker) before the integration tests; the command is in
+[`.claude/skills/it-gen/SKILL.md`](.claude/skills/it-gen/SKILL.md), "Running".
 
 None of these can tell whether an expected value is *correct*. That needs judgment, which is why
 `/it-gen` also runs an independent reviewer agent that checks expectations against the production
@@ -466,13 +449,13 @@ code.
 
 A test can pass while the service logs an exception it swallowed, a rolled-back transaction or a
 Kafka deserialization failure, or while Postgres logs a constraint violation. **LogScan**
-(`.claude/skills/it-gen/scripts/LogScan.java`, another dependency-free single-file Java script) reads
+(`.claude/skills/it-gen/scripts/LogScan.java`, a dependency-free single-file Java script) reads
 three kinds of log from an IT run:
 - **Service and test logs:** Failsafe writes each IT class's output to its own file when you add
   `-Dmaven.test.redirectTestOutputToFile=true` (`target/failsafe-reports/<Class>-output.txt`).
-- **Container logs:** every Testcontainers container (Postgres, Kafka, Redis) is started with
-  Testcontainers' `Slf4jLogConsumer` on a `container.<name>` logger. `logback-test.xml` writes each one
-  verbatim to `target/container-logs/<name>.log`, separate from the service log.
+- **Container logs:** every Testcontainers container (Postgres, Kafka, Redis) is created through
+  `testing/test-support`'s `TestContainers`, which attaches `ContainerLogs`: it writes each container's
+  output verbatim to `target/container-logs/<name>.log`, separate from the service log.
 
 ```bash
 mvn -pl services/order-service verify -Dmaven.test.redirectTestOutputToFile=true
@@ -499,14 +482,9 @@ and all findings appear in the final report.
 ### HTTP 500 is never expected
 
 A 500 means an unforeseen bug in the service, so the backend never returns one on purpose and no test
-expects one:
-
-| Situation | Status |
-|---|---|
-| a dependency or the database is unreachable or timed out (an outage) | **503** |
-| a dependency answered with an error status or an unreadable body | **502** |
-| a unique-constraint or concurrent-write conflict | **409** |
-| bad input | **400** |
+expects one: outages are **503**, bad upstream answers **502**, conflicts **409**, bad input **400**.
+The full status mapping and how the rule is enforced are in
+[conventions.md, "HTTP 500 is never expected"](.claude/skills/it-gen/conventions.md#http-500-is-never-expected).
 
 Every outbound client is built with `common.http.HttpClients.withTimeouts(connect, read)` and
 translates failures with `common.http.Downstream`. `common.security.ApiErrorHandler` is the safety
@@ -522,42 +500,24 @@ instead of hanging the request. Each dependency's timeouts are a validated `*Pro
 | watchlist → market-data | 1s | 2s (degrades to `pricesAvailable: false`) | `MARKET_DATA_CONNECT_TIMEOUT` / `MARKET_DATA_READ_TIMEOUT` |
 | risk → portfolio | 2s | 3s | `PORTFOLIO_CONNECT_TIMEOUT` / `PORTFOLIO_READ_TIMEOUT` |
 
-The rule is enforced statically:
-- PMD `build/pmd/no-internal-server-error.xml`, on production and test code: `statusCode(500)`,
-  `INTERNAL_SERVER_ERROR`, `internalServerError()`, `@ResponseStatus(INTERNAL_SERVER_ERROR)`
-- ArchUnit `neverProduceInternalServerError` (production bytecode) and
-  `integrationTestsNeverExpectInternalServerError`
-- TestLint
-
 At runtime, LogScan's `unhandledHttp500` flags any request that still ended in a 500. That's a product
 defect to fix, never a status to assert. Test stubs may still simulate a *dependency* answering 500:
 that's the scenario, and the service must answer 502.
 
 ### When a check or test fails: report it, never hide it
 
-A failing gate (Checkstyle, PMD, ArchUnit, TestLint) or functional test (unit, per-service IT,
-cross-service, e2e) may be revealing a real defect. It is **never** made to pass by changing the test
-or the rule. The only exception is a genuine defect in the test code itself, such as a compile error,
-an unused import, or a stub missing for a new dependency. It may be fixed only when the fix doesn't
-change what the test verifies, and the fix is reported.
+A failing gate (Checkstyle, PMD, ArchUnit) or functional test (unit, per-service IT, cross-service,
+e2e) may be revealing a real defect, and so may an unexpected error in the logs of a green run. It is
+**never** made to pass by changing the test or the rule. Only a genuine defect in the test code
+itself (a compile error, an unused import, a stub missing for a new dependency) may be fixed directly,
+when the fix doesn't change what the test verifies, and the fix is reported. Everything else goes to
+a person with what the test verifies, the exact failure, an analysis and the options.
 
-Everything else goes to a person, with:
-- what the test verifies and why (the code line or requirement it is based on)
-- exactly what fails (expected vs actual, or the rule and message)
-- an analysis of the likely cause: product defect, ambiguous behaviour, wrong test assumption, or
-  environment
-- the options
-
-These require an explicit human decision:
-- changing an expected value to the observed behaviour
-- weakening or removing an assertion, or deleting a case
-- `@Disabled`
-- rule suppressions (`@SuppressWarnings("PMD…")`, `// NOPMD`, `CHECKSTYLE:OFF`, ArchUnit freezing)
-- edits to the gate configuration
-
-The Claude Code setup enforces this in `CLAUDE.md` and the `/it-gen` agents. Its writer reports such
-failures instead of fixing them, the orchestrator asks the user, and its reviewer scores any hidden
-failure 0.
+The full rule, the report format and the list of changes that need an explicit human decision
+(changing an expected value, weakening an assertion, `@Disabled`, rule suppressions, gate-config
+edits, silencing logs, …) are in [`CLAUDE.md`](CLAUDE.md), "When a check or test fails". The
+`/it-gen` agents follow it: the writer reports such failures instead of fixing them, the orchestrator
+asks the user, and the reviewer scores any hidden failure 0.
 
 Security: all services validate a shared-secret HS256 JWT (issued by `auth-service`); the
 notification WebSocket validates the token on the STOMP CONNECT frame.

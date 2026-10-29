@@ -10,7 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import com.example.demo.e2e.framework.model.LoginRequest;
-import com.example.demo.e2e.framework.support.RawJsonPayload;
+import com.example.demo.testing.RawJsonPayload;
 
 class ApiRequestTest {
 

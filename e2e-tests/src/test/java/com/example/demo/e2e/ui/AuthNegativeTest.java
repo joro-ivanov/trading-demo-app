@@ -6,14 +6,10 @@ import static com.example.demo.e2e.framework.support.HttpStatusCodes.UNAUTHORIZE
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import com.example.demo.e2e.framework.pages.LoginPage;
 import com.example.demo.e2e.framework.pages.RegistrationPage;
-import com.example.demo.e2e.harness.PlaywrightLifecycle;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 
 import io.qameta.allure.Allure;
 
@@ -23,9 +19,6 @@ import io.qameta.allure.Allure;
  * deterministic; the happy-path registration runs against the live stack. Not market-hours gated
  * (auth is not order placement).
  */
-@Tag("ui")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(PlaywrightLifecycle.class)
 class AuthNegativeTest extends BaseUiTest {
 
     private static final String WRONG_PASSWORD = "wrong-password";

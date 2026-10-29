@@ -10,9 +10,7 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import java.util.Comparator;
 import java.util.List;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import com.example.demo.e2e.framework.http.ApiResponse;
 import com.example.demo.e2e.framework.model.Fill;
@@ -26,20 +24,14 @@ import com.example.demo.e2e.framework.service.auth.AuthService;
 import com.example.demo.e2e.framework.service.funds.FundsService;
 import com.example.demo.e2e.framework.service.order.OrderHistoryService;
 import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
-import com.example.demo.e2e.harness.PlaywrightLifecycle;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
 
 import io.qameta.allure.Allure;
 
-@Tag("ui")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(PlaywrightLifecycle.class)
 class PortfolioLifecycleTest extends BaseUiTest {
 
     private static final String USER_PREFIX = "portfolio";
     /** The BUY fill and the SELL fill. */
-    private static final int BUY_AND_SELL_FILLS = 2;
 
     @RunDuringMarketHours
     @Test

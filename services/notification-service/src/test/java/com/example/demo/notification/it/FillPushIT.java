@@ -1,8 +1,8 @@
 package com.example.demo.notification.it;
 
-import static com.example.demo.notification.it.harness.NotificationFixtures.FILLS;
+import static com.example.demo.testing.support.fixtures.Topics.FILLS;
 import static com.example.demo.notification.it.harness.NotificationFixtures.OTHER_USER;
-import static com.example.demo.notification.it.harness.NotificationFixtures.TESTER;
+import static com.example.demo.testing.support.fixtures.TestUsers.TESTER;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.math.BigDecimal;
@@ -12,9 +12,9 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import com.example.demo.notification.it.harness.FillEvent;
+import com.example.demo.testing.support.contracts.FillEvent;
 import com.example.demo.notification.it.harness.NotificationITBase;
-import com.example.demo.notification.it.harness.StompProbe.Frames;
+import com.example.demo.testing.support.stomp.StompFrames;
 
 /** Kafka {@code fills} → STOMP {@code /user/queue/fills}, delivered only to the fill's owner. */
 class FillPushIT extends NotificationITBase {
@@ -33,8 +33,8 @@ class FillPushIT extends NotificationITBase {
 
     @Test
     void deliversKafkaFillOnlyToItsOwner() throws Exception {
-        Frames<FillEvent> ownerFrames = stomp.subscribeToFills(stomp.connect(TESTER), TESTER);
-        Frames<FillEvent> otherFrames = stomp.subscribeToFills(stomp.connect(OTHER_USER), OTHER_USER);
+        StompFrames<FillEvent> ownerFrames = stomp.subscribeToFills(stomp.connect(TESTER), TESTER);
+        StompFrames<FillEvent> otherFrames = stomp.subscribeToFills(stomp.connect(OTHER_USER), OTHER_USER);
 
         produce(FILLS, FILL_SYMBOL, FILL);
 

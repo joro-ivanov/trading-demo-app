@@ -179,13 +179,21 @@ Booting multiple services together surfaced several issues; the fixes are baked 
 ```
 demo-app-java/
 ├── pom.xml                          # parent reactor: modules, BOMs, profiles, quality gates
-├── docs/{DESIGN.md, testing-cookbook.md}
+├── docs/{DESIGN.md, testing-cookbook.md, test-coverage.md}
+├── common/                          # shared Jwt, security config, ApiErrorHandler, Money, Clocks, MarketHours
+├── testing/
+│   ├── test-rules/                  # shared ArchUnit rule libraries + the only @RawJsonPayload
+│   └── test-support/                # shared IT plumbing: ServiceITBase, TestContainers, KafkaProbe, TestJwt, …
 ├── services/
+│   ├── pom.xml                      # parent of the services: shared deps, service PMD rulesets, JaCoCo, boot jar
 │   ├── order-service/               # src/main + src/test (per-service TC + WireMock)
 │   ├── market-data-service/
 │   ├── portfolio-service/
 │   ├── notification-service/
-│   └── auth-service/
+│   ├── auth-service/
+│   ├── alert-service/
+│   ├── watchlist-service/
+│   └── risk-service/
 ├── frontend/web-dashboard/          # React + Vite + TS  (+ .devcontainer/)
 ├── integration-tests/               # cross-service suite (boots several services)
 ├── e2e-tests/                       # ★ SINGLE e2e module, three subpackages:
@@ -195,8 +203,7 @@ demo-app-java/
 │       │                            #   Allure hooks/extensions
 │       ├── api/                     #   API e2e tests (use framework.services only)
 │       └── ui/                      #   Playwright UI e2e tests (Page Objects + framework.services)
-├── archunit-tests/                  # architecture rules for services + e2e module
-├── test-support/                    # Testcontainers factories, WireMock stub builders
+├── wiremock-ws-spike/               # WireMock WS DSL spike + fault injection
 ├── .devcontainer/                   # FE dev container (§12)
 └── docker-compose.yml               # run the whole app (BE+FE) in Docker (§12)
 ```
@@ -283,13 +290,10 @@ reflects fill; multi-context (two browsers observe the same market move). Data a
 service objects.
 
 ### 7.3 Test conventions (HARD rules, enforced by §13)
-- **Atomic** — one behavior per test.
-- **Exact values** — exact status codes, prices, counts, messages; never ranges/inequalities.
-- **No control statements in test code** — no `if/else`, `switch`, `for`, `for-each`, `while`,
-  `do/while`, ternary, or `try/catch` around expected successes. Linear: setup → act → assert.
-- **Parameterized where possible** — multiple input variants use JUnit 5 `@ParameterizedTest`
-  (`@CsvSource`/`@MethodSource`/`@EnumSource`) instead of copy-paste or loops.
-- Async via Awaitility with explicit timeouts; never `Thread.sleep`.
+Owned by `.claude/skills/it-gen/conventions.md` ("Test-method rules", with the tool behind each rule in
+"Enforced by"). In short: one behaviour per test; exact values (never ranges/inequalities); no control
+statements in test code (linear setup → act → assert); `@ParameterizedTest` where inputs differ only in
+data; no magic values; DTOs only; Awaitility with explicit timeouts, never `Thread.sleep`.
 
 ### 7.4 Running UI tests without host browsers
 Property `ui.browser.mode = local | testcontainers`:
@@ -528,6 +532,11 @@ in `e2e-tests`. Keys: `base.url`, `ws.base.url`, per-service base paths, credent
   STOMP client touches exactly one class.
 - `ApiRequest`/`ApiResponse` are records (immutable).
 
+**Implementation:** the shared rules are libraries in `testing/test-rules` (`ServiceArchitectureRules`,
+`TestAssertionRules`, `IntegrationTestRules`); each module runs them from a small class naming its package
+(`<Svc>ArchitectureTest`, `<Module>TestArchitectureTest`). `E2eArchitectureTest` holds the e2e rules above and
+includes `TestAssertionRules`.
+
 ### 13.2 PMD / Checkstyle (statement-level — what ArchUnit cannot see)
 ArchUnit inspects dependencies, **not** method-body control flow, so the statement-level test
 rules are enforced with PMD custom rules / Checkstyle, wired into the same `verify` gate:
@@ -537,7 +546,9 @@ rules are enforced with PMD custom rules / Checkstyle, wired into the same `veri
 - **Encourage parameterization:** a PMD rule flags duplicated test-method bodies / magic-value
   fan-out that should be a `@ParameterizedTest`. (Heuristic — pure parameterization can't be
   *proven* statically, so this is a lint warning + review guideline, stated honestly.)
-- Money/`double` and `Thread.sleep` bans also mirrored as PMD rules for fast feedback.
+- `Thread.sleep` / `TimeUnit.sleep` in tests: banned in every module by ArchUnit
+  (`TestAssertionRules.testsNeverSleep`), since it is a method call, which bytecode sees.
+- The rule → tool mapping actually in force is conventions.md, "Enforced by".
 
 ### 13.3 Frontend (TS — ArchUnit is JVM-only)
 Equivalent guarantees via **dependency-cruiser** (layer/boundary rules: components → hooks →
@@ -651,7 +662,8 @@ All other dependencies: **latest stable** at scaffold time, versions centralized
     - **Docs:** root `README.md` + `docs/testing-cookbook.md`.
     - Full `mvn verify` green (10 modules); API e2e (6) + UI e2e (1) verified against the compose
       stack with auth. **CI pipeline intentionally not built.** `test-support` extraction is moot
-      (e2e boots nothing; only `integration-tests` launches subprocesses).
+      (e2e boots nothing; only `integration-tests` launches subprocesses). *(Later revisited: the shared
+      IT plumbing now lives in `testing/test-support`.)*
 11. ✅ **M11 — Trading-domain coverage (BVA/EP, reviewed with the grizzled-trader):**
     - **Order BVA/EP:** parameterized validation matrix — quantity `0` (off-point of `@Positive`),
       `-5`, missing; symbol `""`/`"   "` (`@NotBlank`); null & bad-enum side; valid boundaries
@@ -903,7 +915,8 @@ All other dependencies: **latest stable** at scaffold time, versions centralized
       assertions (`contains`, ranges, `isNotNull`/`isNotBlank`, Hamcrest `containsString`, WireMock
       `containing`): lists are made exact with a dedicated owner per test, auth resets to the seed users
       before each test, and login/registration tokens are verified by their decoded claims; JaCoCo IT coverage
-      (`target/site/jacoco-it/`).
+      (`target/site/jacoco-it/`). *(Historical: these per-service classes have since been replaced by the
+      shared `testing/test-rules` libraries run from `<Svc>TestArchitectureTest`, see §13.1.)*
     - **Tests.** ITs 127→134, all assertions kept or tightened (exact parsed Kafka/STOMP payloads instead
       of `contains`, exact error bodies, no-fill proven by the resting event instead of a fixed wait).
       Each service green on 3 consecutive runs; full `mvn verify` of common + services green.

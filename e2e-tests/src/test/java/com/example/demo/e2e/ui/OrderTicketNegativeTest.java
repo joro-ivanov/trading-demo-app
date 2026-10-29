@@ -4,16 +4,12 @@ import static com.example.demo.e2e.framework.support.HttpStatusCodes.CREATED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.example.demo.e2e.framework.model.OrderType;
 import com.example.demo.e2e.framework.pages.OrderTicketPage;
-import com.example.demo.e2e.harness.PlaywrightLifecycle;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 
 import io.qameta.allure.Allure;
 
@@ -26,9 +22,6 @@ import io.qameta.allure.Allure;
  * tests prove the UI never looks idle/submitted when the order did not go through, and that the
  * in-flight lock prevents a double-fire.
  */
-@Tag("ui")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(PlaywrightLifecycle.class)
 class OrderTicketNegativeTest extends BaseUiTest {
 
     /** Below the quantity field's minimum. */

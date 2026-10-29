@@ -9,13 +9,12 @@
         a final field (constant), a local variable, or a data table in an annotation (@CsvSource,
         @ValueSource, @ParameterizedTest(name)). Allowed inline: 0, 1 and "". Human-readable prose that is
         never compared is exempt: the description passed to Allure.step / as / describedAs /
-        withFailMessage / overridingErrorMessage, and AssertionError / IllegalStateException messages.
-        Production code, harness/ plumbing packages and the flagship's Stack helper are excluded.
+        withFailMessage / overridingErrorMessage, and AssertionError / IllegalStateException / IllegalArgumentException messages.
+        Production code and harness/ plumbing packages (incl. the flagship's harness/Stack) are excluded.
     </description>
 
     <exclude-pattern>.*[/\\]src[/\\]main[/\\].*</exclude-pattern>
     <exclude-pattern>.*[/\\]harness[/\\].*</exclude-pattern>
-    <exclude-pattern>.*[/\\]Stack\.java</exclude-pattern>
 
     <rule name="NoMagicValuesInTests"
           language="java"

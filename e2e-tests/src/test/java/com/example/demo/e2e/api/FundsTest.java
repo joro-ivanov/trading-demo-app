@@ -1,6 +1,5 @@
 package com.example.demo.e2e.api;
 
-import com.example.demo.e2e.framework.allure.TestLogArtifacts;
 import com.example.demo.e2e.framework.http.ApiResponse;
 import com.example.demo.e2e.framework.model.Balance;
 import com.example.demo.e2e.framework.model.ErrorResponse;
@@ -17,12 +16,9 @@ import com.example.demo.e2e.framework.service.order.OrderHistoryService;
 import com.example.demo.e2e.framework.service.order.OrdersService;
 import com.example.demo.e2e.framework.service.portfolio.PortfolioService;
 import com.example.demo.e2e.framework.support.ApiErrorMessages;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 import com.example.demo.e2e.harness.RunDuringMarketHours;
 import io.qameta.allure.Allure;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -46,9 +42,6 @@ import static org.awaitility.Awaitility.await;
  * Funds (deposit/withdraw/balance) and the pre-trade funds guard, through the live stack. Each test
  * registers a fresh user so balances are deterministic across runs (new users start at zero).
  */
-@Tag("api")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(TestLogArtifacts.class)
 class FundsTest extends BaseApiTest {
 
     /** A fresh user's cash, as the funds guard reports it. */
@@ -64,7 +57,6 @@ class FundsTest extends BaseApiTest {
     /** Enough cash to buy one share at any demo price. */
     private static final BigDecimal FUNDING_DEPOSIT = new BigDecimal("100000");
     /** The BUY fill and the SELL fill. */
-    private static final int BUY_AND_SELL_FILLS = 2;
 
     @Test
     void depositIncreasesTheBalance() {

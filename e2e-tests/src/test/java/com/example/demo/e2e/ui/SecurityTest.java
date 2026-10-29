@@ -3,16 +3,12 @@ package com.example.demo.e2e.ui;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import com.example.demo.e2e.framework.pages.DashboardPage;
 import com.example.demo.e2e.framework.pages.LoginPage;
 import com.example.demo.e2e.framework.ui.LocalStorage;
 import com.example.demo.e2e.framework.ui.SessionStorage;
-import com.example.demo.e2e.harness.PlaywrightLifecycle;
-import com.example.demo.e2e.harness.RequireRunningBackend;
 
 import io.qameta.allure.Allure;
 
@@ -20,9 +16,6 @@ import io.qameta.allure.Allure;
  * Security e2e (UI): client-side token handling, session lifecycle, and output encoding in a real
  * browser. Not market-hours gated (no order placement).
  */
-@Tag("ui")
-@ExtendWith(RequireRunningBackend.class)
-@ExtendWith(PlaywrightLifecycle.class)
 class SecurityTest extends BaseUiTest {
 
     /** Storage key under which the dashboard would keep a session token. */

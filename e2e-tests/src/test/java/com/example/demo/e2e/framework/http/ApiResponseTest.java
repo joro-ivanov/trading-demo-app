@@ -9,6 +9,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import com.example.demo.common.json.Json;
 import com.example.demo.e2e.framework.model.Price;
 import com.example.demo.e2e.framework.model.TradingSymbols;
 

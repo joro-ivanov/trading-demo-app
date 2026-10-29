@@ -1,5 +1,6 @@
 package com.example.demo.integration;
 
+import static com.example.demo.testing.support.fixtures.TestTimeouts.EVENT_TIMEOUT;
 import static com.github.tomakehurst.wiremock.client.WireMock.configureFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.message;
 import static com.github.tomakehurst.wiremock.client.WireMock.messageStubFor;
@@ -17,15 +18,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.stomp.StompSession;
-import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -35,7 +32,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.example.demo.common.json.Json;
+import com.example.demo.integration.harness.Stack;
 import com.example.demo.marketdata.model.PriceTick;
+import com.example.demo.order.domain.OrderStatus;
 import com.example.demo.order.domain.Side;
 import com.example.demo.order.exchange.ExchangeAck;
 import com.example.demo.order.web.OrderResponse;
@@ -43,6 +42,10 @@ import com.example.demo.order.web.PlaceOrderRequest;
 import com.example.demo.portfolio.web.FundsDtos.FundsRequest;
 import com.example.demo.portfolio.web.FillResponse;
 import com.example.demo.portfolio.web.PositionResponse;
+import com.example.demo.testing.support.auth.TestJwt;
+import com.example.demo.testing.support.containers.TestContainers;
+import com.example.demo.testing.support.fixtures.TestUsers;
+import com.example.demo.testing.support.stomp.StompFrames;
 
 /**
  * Cross-service flagship test (docs/DESIGN.md §7.2). Launches order + market-data + portfolio +
@@ -60,17 +63,8 @@ import com.example.demo.portfolio.web.PositionResponse;
 @Testcontainers
 class OrderToPortfolioFlowIT {
 
-    private static final String CP_KAFKA = "confluentinc/cp-kafka:7.8.0";
-    private static final String POSTGRES = "postgres:17-alpine";
-    private static final String REDIS_IMAGE = "redis:7-alpine";
-    private static final int REDIS_PORT = 6379;
     private static final Duration STARTUP = Duration.ofSeconds(90);
     private static final Duration FLOW_TIMEOUT = Duration.ofSeconds(30);
-    private static final long FILL_FRAME_TIMEOUT_SECONDS = 20;
-
-    private static final String SUBJECT = "tester";
-    private static final String JWT_SECRET = "demo-secret-demo-secret-demo-secret-1234";
-    private static final long TOKEN_TTL_SECONDS = 3600;
 
     private static final String LOCALHOST = "localhost";
     private static final String HTTP_LOCALHOST = "http://" + LOCALHOST + ":";
@@ -97,6 +91,8 @@ class OrderToPortfolioFlowIT {
     private static final String ORDER_LOG = "it-order.log";
     private static final String PORTFOLIO_LOG = "it-portfolio.log";
     private static final String NOTIFICATION_LOG = "it-notification.log";
+    private static final String PG_ORDER_LOG = "postgres-order";
+    private static final String PG_PORTFOLIO_LOG = "postgres-portfolio";
 
     // HTTP / STOMP endpoints.
     private static final String PRICE_PATH = "/prices/" + SYMBOL;
@@ -111,8 +107,8 @@ class OrderToPortfolioFlowIT {
     private static final int ORDER_QUANTITY = 10;
     private static final int OK = 200;
     private static final int CREATED = 201;
-    private static final String SUBMITTED = "SUBMITTED";
-    private static final String FILLED = "FILLED";
+    private static final String SUBMITTED = OrderStatus.SUBMITTED.name();
+    private static final String FILLED = OrderStatus.FILLED.name();
 
     // Spring properties passed to the service processes.
     private static final String SERVER_PORT = "server.port";
@@ -132,24 +128,16 @@ class OrderToPortfolioFlowIT {
     private static final String MARKET_DATA_SYMBOLS = "market-data.symbols";
 
     @Container
-    @SuppressWarnings("resource")
-    static final PostgreSQLContainer PG_ORDER = new PostgreSQLContainer(POSTGRES)
-            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.postgres-order")));
+    static final PostgreSQLContainer PG_ORDER = TestContainers.postgres(PG_ORDER_LOG);
 
     @Container
-    @SuppressWarnings("resource")
-    static final PostgreSQLContainer PG_PORTFOLIO = new PostgreSQLContainer(POSTGRES)
-            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.postgres-portfolio")));
+    static final PostgreSQLContainer PG_PORTFOLIO = TestContainers.postgres(PG_PORTFOLIO_LOG);
 
     @Container
-    @SuppressWarnings("resource")
-    static final ConfluentKafkaContainer KAFKA = new ConfluentKafkaContainer(CP_KAFKA)
-            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.kafka")));
+    static final ConfluentKafkaContainer KAFKA = TestContainers.kafka();
 
     @Container
-    @SuppressWarnings("resource")
-    static final GenericContainer<?> REDIS = new GenericContainer<>(REDIS_IMAGE).withExposedPorts(REDIS_PORT)
-            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("container.redis")));
+    static final GenericContainer<?> REDIS = TestContainers.redis();
 
     // Two WireMock servers: mixing a WS message stub and a REST stub on one server breaks the
     // plain REST call (the WS upgrade filter sits on /*), so REST routing and the WS feed are split.
@@ -157,7 +145,7 @@ class OrderToPortfolioFlowIT {
     static final WireMockServer EXCHANGE_WS = new WireMockServer(options().dynamicPort());
 
     static final List<Process> PROCESSES = new ArrayList<>();
-    static final String TOKEN = com.example.demo.common.security.Jwt.issue(SUBJECT, JWT_SECRET, TOKEN_TTL_SECONDS);
+    static final String TOKEN = TestJwt.token(TestUsers.TESTER);
 
     static int orderPort;
     static int portfolioPort;
@@ -204,8 +192,8 @@ class OrderToPortfolioFlowIT {
 
     @Test
     void orderFlowsThroughToPortfolioAndStompClient() throws Exception {
-        BlockingQueue<String> fills = new LinkedBlockingQueue<>();
-        StompSession session = Stack.subscribe(notificationPort, FILLS_QUEUE, TOKEN, fills);
+        StompSession session = Stack.connect(notificationPort, TOKEN);
+        StompFrames<FillResponse> fills = Stack.subscribe(session, FILLS_QUEUE, FillResponse.class, EVENT_TIMEOUT);
 
         // tester has no seeded cash — fund the account so the BUY passes the pre-trade funds guard.
         Stack.post(portfolioPort, TOKEN, DEPOSIT_PATH, new FundsRequest(BigDecimal.valueOf(DEPOSIT_AMOUNT)), OK);
@@ -230,9 +218,8 @@ class OrderToPortfolioFlowIT {
                     .satisfies(response -> assertThat(response.status()).isEqualTo(FILLED));
         });
 
-        String fill = Stack.nextFrame(fills, FILL_FRAME_TIMEOUT_SECONDS);
+        FillResponse fillResponse = fills.awaitFrame();
         session.disconnect();
-        FillResponse fillResponse = Stack.frameAs(fill, FillResponse.class);
         assertSoftly(softly -> {
             softly.assertThat(fillResponse.symbol()).isEqualTo(SYMBOL);
             softly.assertThat(fillResponse.price()).isEqualByComparingTo(FEED_PRICE);
@@ -268,7 +255,7 @@ class OrderToPortfolioFlowIT {
     private static Map<String, String> marketDataProps(String kafka, int port) {
         Map<String, String> props = base(kafka, port);
         props.put(REDIS_HOST, REDIS.getHost());
-        props.put(REDIS_PORT_PROPERTY, Integer.toString(REDIS.getMappedPort(REDIS_PORT)));
+        props.put(REDIS_PORT_PROPERTY, Integer.toString(REDIS.getMappedPort(TestContainers.REDIS_PORT)));
         props.put(EXCHANGE_WS_URL, WS_LOCALHOST + EXCHANGE_WS.port() + EXCHANGE_FEED_PATH);
         props.put(MARKET_DATA_SYMBOLS, SYMBOL);
         return props;

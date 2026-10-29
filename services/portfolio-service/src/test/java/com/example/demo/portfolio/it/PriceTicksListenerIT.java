@@ -1,5 +1,10 @@
 package com.example.demo.portfolio.it;
 
+import static com.example.demo.testing.support.auth.TestJwt.token;
+import static com.example.demo.testing.support.fixtures.TestTimeouts.EVENT_TIMEOUT;
+import static com.example.demo.testing.support.fixtures.TestUsers.ALICE;
+import static com.example.demo.testing.support.fixtures.TestUsers.BOB;
+import static com.example.demo.testing.support.fixtures.TestUsers.TESTER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
@@ -38,8 +43,6 @@ class PriceTicksListenerIT extends PortfolioITBase {
     private static final String SHORT_QUANTITY = "-5";
 
     // One tick marks every owner of the symbol.
-    private static final String ALICE = "alice";
-    private static final String BOB = "bob";
     private static final String SHARED_SYMBOL = "MULTI";
     private static final String SHARED_FILL_QUANTITY = "10";
     private static final String SHARED_FILL_PRICE = "100";
@@ -57,8 +60,8 @@ class PriceTicksListenerIT extends PortfolioITBase {
 
     @Test
     void buildsPositionAndPnlFromFillThenPrice() {
-        KAFKA_PROBE.sendFill(TESTER, MARKED_SYMBOL, BUY, LONG_QUANTITY, AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() -> {
+        EVENTS.sendFill(TESTER, MARKED_SYMBOL, BUY, LONG_QUANTITY, AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             PositionResponse position = position(MARKED_SYMBOL);
             assertSoftly(softly -> {
                 softly.assertThat(position.quantity()).isEqualByComparingTo(LONG_QUANTITY);
@@ -66,9 +69,9 @@ class PriceTicksListenerIT extends PortfolioITBase {
             });
         });
 
-        KAFKA_PROBE.sendTick(MARKED_SYMBOL, MARK_PRICE);
+        EVENTS.sendTick(MARKED_SYMBOL, MARK_PRICE);
 
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             PositionResponse position = position(MARKED_SYMBOL);
             assertSoftly(softly -> {
                 softly.assertThat(position.marketPrice()).isEqualByComparingTo(MARK_PRICE);
@@ -80,13 +83,13 @@ class PriceTicksListenerIT extends PortfolioITBase {
     @ParameterizedTest(name = "{0}: mark {1} on avg 190 -> P&L {2}")
     @CsvSource({"NFLX,195,50", "AMZN,180,-100", "META,190,0"})
     void unrealizedPnlReflectsMarkVersusAverage(String symbol, BigDecimal mark, BigDecimal expectedPnl) {
-        KAFKA_PROBE.sendFill(TESTER, symbol, BUY, LONG_QUANTITY, AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, symbol, BUY, LONG_QUANTITY, AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(symbol).quantity()).isEqualByComparingTo(LONG_QUANTITY));
 
-        KAFKA_PROBE.sendTick(symbol, mark.toPlainString());
+        EVENTS.sendTick(symbol, mark.toPlainString());
 
-        await().atMost(WAIT).untilAsserted(() -> {
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() -> {
             PositionResponse position = position(symbol);
             assertSoftly(softly -> {
                 softly.assertThat(position.marketPrice()).isEqualByComparingTo(mark);
@@ -100,16 +103,16 @@ class PriceTicksListenerIT extends PortfolioITBase {
     @ParameterizedTest(name = "{0}: short avg 190, mark {1} -> P&L {2}")
     @CsvSource({"SHRTA,200,-50", "SHRTB,180,50", "SHRTC,190,0"})
     void shortPositionPnlReflectsMarkVersusAverage(String symbol, BigDecimal mark, BigDecimal expectedPnl) {
-        KAFKA_PROBE.sendFill(TESTER, symbol, BUY, LONG_QUANTITY, AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, symbol, BUY, LONG_QUANTITY, AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(symbol).quantity()).isEqualByComparingTo(LONG_QUANTITY));
-        KAFKA_PROBE.sendFill(TESTER, symbol, SELL, OVERSELL_QUANTITY, AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, symbol, SELL, OVERSELL_QUANTITY, AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(symbol).quantity()).isEqualByComparingTo(SHORT_QUANTITY));
 
-        KAFKA_PROBE.sendTick(symbol, mark.toPlainString());
+        EVENTS.sendTick(symbol, mark.toPlainString());
 
-        await().atMost(WAIT).untilAsserted(() ->
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(symbol).unrealizedPnl()).isEqualByComparingTo(expectedPnl));
     }
 
@@ -118,18 +121,18 @@ class PriceTicksListenerIT extends PortfolioITBase {
     void priceTickMarksAllOwnersOfSymbol() {
         String aliceToken = token(ALICE);
         String bobToken = token(BOB);
-        KAFKA_PROBE.sendFill(ALICE, SHARED_SYMBOL, BUY, SHARED_FILL_QUANTITY, SHARED_FILL_PRICE);
-        KAFKA_PROBE.sendFill(BOB, SHARED_SYMBOL, BUY, SHARED_FILL_QUANTITY, SHARED_FILL_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(ALICE, SHARED_SYMBOL, BUY, SHARED_FILL_QUANTITY, SHARED_FILL_PRICE);
+        EVENTS.sendFill(BOB, SHARED_SYMBOL, BUY, SHARED_FILL_QUANTITY, SHARED_FILL_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(aliceToken, SHARED_SYMBOL).quantity()).isEqualByComparingTo(SHARED_FILL_QUANTITY));
-        await().atMost(WAIT).untilAsserted(() ->
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(bobToken, SHARED_SYMBOL).quantity()).isEqualByComparingTo(SHARED_FILL_QUANTITY));
 
-        KAFKA_PROBE.sendTick(SHARED_SYMBOL, SHARED_MARK);
+        EVENTS.sendTick(SHARED_SYMBOL, SHARED_MARK);
 
-        await().atMost(WAIT).untilAsserted(() ->
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(aliceToken, SHARED_SYMBOL).marketPrice()).isEqualByComparingTo(SHARED_MARK));
-        await().atMost(WAIT).untilAsserted(() ->
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(bobToken, SHARED_SYMBOL).marketPrice()).isEqualByComparingTo(SHARED_MARK));
     }
 
@@ -139,13 +142,13 @@ class PriceTicksListenerIT extends PortfolioITBase {
     // commit a tick, then save the snapshot with the fill's new quantity. Both updates must survive.
     @Test
     void aTickAndAConcurrentFillToTheSamePositionBothSurvive() {
-        KAFKA_PROBE.sendFill(TESTER, RACE_SYMBOL, BUY, LONG_QUANTITY, AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, RACE_SYMBOL, BUY, LONG_QUANTITY, AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(RACE_SYMBOL).quantity()).isEqualByComparingTo(LONG_QUANTITY));
         PositionEntity fillInFlight = positionRepository.findByOwnerAndSymbol(TESTER, RACE_SYMBOL).orElseThrow();
 
-        KAFKA_PROBE.sendTick(RACE_SYMBOL, MARK_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendTick(RACE_SYMBOL, MARK_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(RACE_SYMBOL).marketPrice()).isEqualByComparingTo(MARK_PRICE));
         fillInFlight.setQuantity(QUANTITY_AFTER_CONCURRENT_FILL);
         positionRepository.save(fillInFlight);
@@ -162,13 +165,13 @@ class PriceTicksListenerIT extends PortfolioITBase {
     // silently overwriting a fill that committed in between, and the committed fill is kept.
     @Test
     void aStaleWriteAfterAFillFailsInsteadOfLosingTheFill() {
-        KAFKA_PROBE.sendFill(TESTER, STALE_SYMBOL, BUY, LONG_QUANTITY, AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, STALE_SYMBOL, BUY, LONG_QUANTITY, AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(STALE_SYMBOL).quantity()).isEqualByComparingTo(LONG_QUANTITY));
         PositionEntity staleCopy = positionRepository.findByOwnerAndSymbol(TESTER, STALE_SYMBOL).orElseThrow();
 
-        KAFKA_PROBE.sendFill(TESTER, STALE_SYMBOL, SELL, SELL_QUANTITY, AVG_PRICE);
-        await().atMost(WAIT).untilAsserted(() ->
+        EVENTS.sendFill(TESTER, STALE_SYMBOL, SELL, SELL_QUANTITY, AVG_PRICE);
+        await().atMost(EVENT_TIMEOUT).untilAsserted(() ->
                 assertThat(position(STALE_SYMBOL).quantity()).isEqualByComparingTo(QUANTITY_AFTER_SELL));
 
         assertThatThrownBy(() -> positionRepository.save(staleCopy))

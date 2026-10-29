@@ -1,5 +1,6 @@
 package com.example.demo.portfolio.it;
 
+import static com.example.demo.testing.support.auth.TestJwt.token;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import java.math.BigDecimal;

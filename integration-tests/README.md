@@ -10,6 +10,9 @@ services together and assert the real chain across boundaries, for example:
 - portfolio updates
 - notification delivery
 
+Plumbing: `com.example.demo.integration.harness.Stack` launches the services as subprocesses from their
+boot jars; containers, `KafkaProbe`, `TestJwt`, `StompClient` and JSON come from `testing/test-support`.
+
 ## Quality Boundary
 
 - The backend services being orchestrated are **demo application code**.
